@@ -1,0 +1,17 @@
+{
+  "name": "ala-sareea",
+  "version": "1.0.0",
+  "description": "ع السريع - لعبة أسئلة أونلاين متعددة اللاعبين بستايل صحرة جيمز",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
