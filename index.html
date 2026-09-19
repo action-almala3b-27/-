@@ -167,44 +167,34 @@
     50% { opacity:0.4; transform:scale(0.8); }
   }
 
+  /* ============ GAME ============ */
   .game-wrap {
     flex:1; display:flex; flex-direction:column; gap:8px;
     max-width:500px; width:100%; margin:0 auto; min-height:0; overflow:hidden;
   }
-  .game-top { display:flex; justify-content:space-between; align-items:center; flex-shrink:0; gap:8px; }
+  .game-top {
+    display:flex; justify-content:space-between; align-items:center;
+    flex-shrink:0; gap:8px;
+  }
   .q-pill {
     background:rgba(139,92,246,0.15); border:1px solid rgba(196,132,252,0.35);
     padding:5px 12px; border-radius:20px; font-size:12px; font-weight:900;
     color:var(--violet-light); line-height:1.3;
   }
-  .timer-pill {
-    background:rgba(255,255,255,0.05); border:1.5px solid rgba(196,132,252,0.4);
-    padding:5px 14px; border-radius:20px; font-size:14px; font-weight:900;
-    color:#fff; min-width:54px; text-align:center; transition:all .2s ease; line-height:1.3;
+  .target-pill {
+    background:linear-gradient(90deg, rgba(251,191,36,0.18), rgba(251,191,36,0.06));
+    border:1px solid rgba(251,191,36,0.45);
+    padding:5px 12px; border-radius:20px; font-size:12px; font-weight:900;
+    color:var(--gold); line-height:1.3;
   }
-  .timer-pill.danger {
-    color:var(--red); border-color:rgba(239,68,68,0.6);
-    background:rgba(239,68,68,0.12); animation:dangerPulse 0.9s infinite;
-  }
-  @keyframes dangerPulse {
-    0%,100% { box-shadow:0 0 8px rgba(239,68,68,0.4); }
-    50% { box-shadow:0 0 20px rgba(239,68,68,0.9); }
-  }
-  .progress-track {
-    width:100%; height:5px; background:rgba(255,255,255,0.08);
-    border-radius:3px; overflow:hidden; flex-shrink:0;
-  }
-  .progress-fill {
-    height:100%; background:linear-gradient(90deg,#EC4899,#8B5CF6);
-    border-radius:3px; transition:width linear .1s;
-    box-shadow:0 0 10px rgba(236,72,153,0.6);
-  }
+
   .question-card {
     border-radius:18px; padding:16px 14px; text-align:center;
     font-size:16px; font-weight:800; line-height:1.55;
     display:flex; align-items:center; justify-content:center;
     flex-shrink:0; min-height:90px; max-height:130px; overflow:hidden;
   }
+
   .choices-grid {
     display:grid; grid-template-columns:1fr; gap:8px;
     flex:1; min-height:0; align-content:stretch;
@@ -213,9 +203,10 @@
     padding:12px 14px; background:rgba(255,255,255,0.04);
     border:1.5px solid rgba(255,255,255,0.12); border-radius:14px;
     color:#F4F4F5; font-family:inherit; font-size:14px; font-weight:800;
-    line-height:1.35; cursor:pointer; transition:all .15s ease;
+    line-height:1.35; cursor:pointer; transition:all .2s ease;
     text-align:right; display:flex; align-items:center; gap:10px;
     min-height:0; overflow:hidden;
+    position:relative;
   }
   .choice-btn .choice-letter {
     width:28px; height:28px; border-radius:9px;
@@ -228,53 +219,103 @@
     flex:1; overflow:hidden; text-overflow:ellipsis;
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   }
-  .choice-btn:not(:disabled):active { transform:scale(0.98); background:rgba(139,92,246,0.12); }
-  .choice-btn.selected {
-    border-color:var(--pink);
-    background:linear-gradient(135deg, rgba(244,63,94,0.22), rgba(139,92,246,0.22));
-    box-shadow:0 0 0 2px rgba(236,72,153,0.35), 0 0 18px rgba(236,72,153,0.5);
+  .choice-btn:not(:disabled):not(.removed):active {
+    transform:scale(0.98);
+    background:rgba(139,92,246,0.12);
   }
+  .choice-btn:disabled:not(.removed):not(.correct):not(.wrong) { cursor:not-allowed; }
+
+  /* ✅ الإجابة الصحيحة */
   .choice-btn.correct {
     border-color:var(--green);
-    background:linear-gradient(135deg, rgba(34,197,94,0.25), rgba(34,197,94,0.08));
-    box-shadow:0 0 0 2px rgba(34,197,94,0.45), 0 0 22px rgba(34,197,94,0.6);
+    background:linear-gradient(135deg, rgba(34,197,94,0.30), rgba(34,197,94,0.10));
+    box-shadow:0 0 0 2px rgba(34,197,94,0.5), 0 0 24px rgba(34,197,94,0.7);
+    transform:scale(1.02);
   }
+  /* ❌ إجابة اللاعب الخاطئة */
   .choice-btn.wrong {
     border-color:var(--red);
     background:linear-gradient(135deg, rgba(239,68,68,0.25), rgba(239,68,68,0.08));
     box-shadow:0 0 0 2px rgba(239,68,68,0.4);
   }
+  /* 🚫 خيار محذوف (تم اختياره خطأً من لاعب آخر) */
+  .choice-btn.removed {
+    opacity:0.35;
+    text-decoration:line-through;
+    text-decoration-color:var(--red);
+    text-decoration-thickness:2px;
+    border-color:rgba(239,68,68,0.4);
+    background:rgba(239,68,68,0.05);
+    cursor:not-allowed;
+    filter:grayscale(0.7);
+  }
+  .choice-btn.removed .choice-letter {
+    background:rgba(239,68,68,0.2);
+    border-color:rgba(239,68,68,0.4);
+    color:#FCA5A5;
+  }
+
+  /* 🔒 شاشة اللاعب المجمّد */
+  .frozen-overlay {
+    position:fixed; inset:0; z-index:150;
+    background:rgba(9,9,11,0.72);
+    backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center;
+    padding:24px;
+    animation:fadeIn .3s ease;
+  }
+  .frozen-overlay.show { display:flex; }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  .frozen-card {
+    background:linear-gradient(160deg, rgba(120,20,50,0.9), rgba(9,9,11,0.9));
+    border:2px solid rgba(239,68,68,0.6);
+    border-radius:22px;
+    padding:28px 22px;
+    max-width:340px;
+    text-align:center;
+    box-shadow:0 0 40px rgba(239,68,68,0.45);
+  }
+  .frozen-icon { font-size:56px; margin-bottom:8px; line-height:1; }
+  .frozen-title {
+    font-size:22px; font-weight:900; color:#FCA5A5;
+    text-shadow:0 0 14px rgba(239,68,68,0.7);
+    margin-bottom:6px;
+  }
+  .frozen-msg { font-size:13px; color:#FECDD3; line-height:1.7; font-weight:700; }
+
+  /* ============ Live scores ============ */
   .live-scores {
     display:flex; gap:6px; overflow-x:auto; scrollbar-width:none;
-    flex-shrink:0; padding-bottom:2px; min-height:32px;
+    flex-shrink:0; padding-bottom:2px; min-height:34px;
   }
   .live-scores::-webkit-scrollbar { display:none; }
   .score-chip {
     display:flex; align-items:center; gap:5px; padding:5px 10px;
     background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
     border-radius:20px; font-size:11px; font-weight:800; flex-shrink:0;
-    line-height:1.3;
+    line-height:1.3; transition:all .2s ease;
   }
   .score-chip.me {
     border-color:var(--pink);
     background:linear-gradient(90deg, rgba(236,72,153,0.20), rgba(139,92,246,0.20));
     box-shadow:0 0 10px rgba(236,72,153,0.4);
   }
-  .score-chip.answered { border-color:var(--green); box-shadow:0 0 10px rgba(34,197,94,0.4); }
-  .score-chip .sc-score { color:var(--gold); font-weight:900; font-size:12px; }
-
-  .reveal-badge {
-    position:absolute; top:50%; left:50%;
-    transform:translate(-50%,-50%) scale(0);
-    font-size:90px; font-weight:900; pointer-events:none; opacity:0;
-    animation:revealPop 1s ease forwards; z-index:100; line-height:1;
+  .score-chip.locked {
+    border-color:var(--red);
+    background:linear-gradient(90deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05));
+    box-shadow:0 0 8px rgba(239,68,68,0.3);
+    opacity:0.7;
   }
-  @keyframes revealPop {
-    0% { transform:translate(-50%,-50%) scale(0); opacity:0; }
-    50% { transform:translate(-50%,-50%) scale(1.2); opacity:1; }
-    100% { transform:translate(-50%,-50%) scale(1); opacity:0; }
+  .score-chip.winner {
+    border-color:var(--green);
+    background:linear-gradient(90deg, rgba(34,197,94,0.25), rgba(34,197,94,0.08));
+    box-shadow:0 0 12px rgba(34,197,94,0.5);
   }
+  .score-chip .sc-avatar { font-size:13px; line-height:1; }
+  .score-chip .sc-score { color:var(--gold); font-weight:900; font-size:13px; }
+  .score-chip .sc-state { font-size:11px; }
 
+  /* ============ Results ============ */
   .results-wrap {
     flex:1; display:flex; flex-direction:column; align-items:center; gap:12px;
     max-width:420px; width:100%; margin:0 auto; min-height:0; overflow:hidden; padding-top:8px;
@@ -289,6 +330,11 @@
     50% { transform:translateY(-8px) rotate(3deg); }
   }
   .results-title { font-size:22px; font-weight:900; text-align:center; flex-shrink:0; }
+  .winner-name {
+    font-size:16px; font-weight:900; color:var(--gold);
+    text-shadow:0 0 14px rgba(251,191,36,0.6);
+    text-align:center; flex-shrink:0;
+  }
   .results-list {
     width:100%; display:flex; flex-direction:column; gap:8px;
     overflow-y:auto; min-height:0; flex:1; padding:2px; scrollbar-width:none;
@@ -323,6 +369,7 @@
     text-shadow:0 0 10px rgba(251,191,36,0.5); flex-shrink:0;
   }
 
+  /* ============ Toast ============ */
   .toast-host {
     position:fixed; top:calc(var(--safe-top) + 12px); left:50%;
     transform:translateX(-50%); z-index:500; pointer-events:none;
@@ -332,12 +379,16 @@
     background:rgba(120,20,50,0.95); border:1.5px solid var(--red);
     color:#FECDD3; padding:9px 18px; border-radius:12px;
     font-size:12px; font-weight:800; box-shadow:0 0 22px rgba(239,68,68,0.55);
-    animation:toastIn .25s ease, toastOut .35s ease 3.2s forwards;
+    animation:toastIn .25s ease, toastOut .35s ease 2.5s forwards;
     text-align:center; line-height:1.5; max-width:340px;
   }
   .toast.success {
     background:rgba(20,80,40,0.95); border-color:var(--green);
     color:#BBF7D0; box-shadow:0 0 22px rgba(34,197,94,0.55);
+  }
+  .toast.info {
+    background:rgba(139,92,246,0.95); border-color:var(--violet-light);
+    color:#EDE9FE; box-shadow:0 0 22px rgba(139,92,246,0.55);
   }
   @keyframes toastIn { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
   @keyframes toastOut { to { opacity:0; } }
@@ -370,7 +421,16 @@
 
 <div class="toast-host" id="toastHost"></div>
 
-<!-- HOME -->
+<!-- ═══════════ Frozen Overlay ═══════════ -->
+<div id="frozenOverlay" class="frozen-overlay">
+  <div class="frozen-card">
+    <div class="frozen-icon">🧊</div>
+    <div class="frozen-title">أنت مُجمّد هذا السؤال</div>
+    <div class="frozen-msg">لقد اخترت إجابة خاطئة.<br>انتظر باقي اللاعبين ليكملوا السؤال.</div>
+  </div>
+</div>
+
+<!-- ═══════════ HOME ═══════════ -->
 <div id="screen-home" class="screen active">
   <div class="home-wrap">
     <div class="brand">
@@ -404,7 +464,7 @@
   </div>
 </div>
 
-<!-- LOBBY -->
+<!-- ═══════════ LOBBY ═══════════ -->
 <div id="screen-lobby" class="screen">
   <div class="lobby-wrap">
     <div class="room-code-box">
@@ -422,31 +482,24 @@
       <div id="playersGrid" class="players-grid"></div>
     </div>
 
-    <!-- Host: category selection -->
-    <!-- ⚠️ الأزرار تحمل data-category + data-cat بنفس القيمة الإنجليزية -->
     <div id="hostControls" class="flex-col gap-8">
       <div class="section-title" style="margin-bottom:2px;">اختر القسم</div>
       <div class="cat-grid">
         <button class="cat-btn" type="button" data-category="football" data-cat="football">
-          <span class="cat-icon">⚽</span>
-          <span class="cat-name">كرة القدم</span>
+          <span class="cat-icon">⚽</span><span class="cat-name">كرة القدم</span>
         </button>
         <button class="cat-btn" type="button" data-category="general" data-cat="general">
-          <span class="cat-icon">🧠</span>
-          <span class="cat-name">معلومات عامة</span>
+          <span class="cat-icon">🧠</span><span class="cat-name">معلومات عامة</span>
         </button>
         <button class="cat-btn" type="button" data-category="anime" data-cat="anime">
-          <span class="cat-icon">🎌</span>
-          <span class="cat-name">أنمي</span>
+          <span class="cat-icon">🎌</span><span class="cat-name">أنمي</span>
         </button>
         <button class="cat-btn" type="button" data-category="islamic" data-cat="islamic">
-          <span class="cat-icon">🕌</span>
-          <span class="cat-name">إسلاميات</span>
+          <span class="cat-icon">🕌</span><span class="cat-name">إسلاميات</span>
         </button>
       </div>
     </div>
 
-    <!-- Guest -->
     <div id="guestWait" class="guest-status-card hidden">
       <div class="guest-status-label">القسم المُختار</div>
       <div class="guest-status-cat" id="guestCategoryDisplay">
@@ -466,32 +519,33 @@
   </div>
 </div>
 
-<!-- GAME -->
+<!-- ═══════════ GAME ═══════════ -->
 <div id="screen-game" class="screen">
   <div class="game-wrap">
     <div class="game-top">
-      <div class="q-pill" id="qCounter">1 / 10</div>
-      <div class="timer-pill" id="timerPill">15</div>
+      <div class="q-pill" id="qCounter">سؤال 1</div>
+      <div class="target-pill">🎯 الهدف <span id="targetScoreDisplay">10</span></div>
     </div>
-    <div class="progress-track">
-      <div class="progress-fill" id="progressFill" style="width:100%;"></div>
-    </div>
+
     <div id="questionCard" class="question-card card">جاري تحميل السؤال...</div>
+
     <div id="choicesGrid" class="choices-grid">
       <button class="choice-btn" data-idx="0"><span class="choice-letter">أ</span><span class="choice-text"></span></button>
       <button class="choice-btn" data-idx="1"><span class="choice-letter">ب</span><span class="choice-text"></span></button>
       <button class="choice-btn" data-idx="2"><span class="choice-letter">ج</span><span class="choice-text"></span></button>
       <button class="choice-btn" data-idx="3"><span class="choice-letter">د</span><span class="choice-text"></span></button>
     </div>
+
     <div class="live-scores" id="liveScores"></div>
   </div>
 </div>
 
-<!-- RESULTS -->
+<!-- ═══════════ RESULTS ═══════════ -->
 <div id="screen-results" class="screen">
   <div class="results-wrap">
     <div class="trophy">🏆</div>
     <div class="results-title title-gradient">النتائج النهائية</div>
+    <div class="winner-name" id="winnerNameDisplay"></div>
     <div id="gameOverReason" style="color:var(--muted); font-size:12px; line-height:1.5; text-align:center;"></div>
     <div id="resultsList" class="results-list"></div>
     <button id="btnPlayAgain" class="btn btn-primary hidden" style="padding:14px; border-radius:14px; font-size:15px; width:100%;">
@@ -502,25 +556,20 @@
 
 <script>
 // ═══════════════════════════════════════════════════
-// قائمة بيضاء صارمة للأقسام (تُرسل كإنجليزي حصراً)
+// قائمة الأقسام
 // ═══════════════════════════════════════════════════
 const ALLOWED_CATEGORIES = new Set(['football', 'general', 'anime', 'islamic']);
-
-// تحويل عربي → إنجليزي (طبقة أمان إضافية)
 const AR_TO_EN = {
   'كرة القدم': 'football', 'كرة قدم': 'football', 'كوره': 'football', 'كورة': 'football',
   'معلومات عامة': 'general', 'معلومات عامه': 'general', 'معلومات': 'general',
   'أنمي': 'anime', 'انمي': 'anime', 'أنيمي': 'anime', 'انيمي': 'anime',
   'إسلاميات': 'islamic', 'اسلاميات': 'islamic', 'إسلامي': 'islamic', 'اسلامي': 'islamic'
 };
-
 function safeCategory(raw) {
   if (raw == null) return null;
-  const trimmed = String(raw).trim();
-  if (ALLOWED_CATEGORIES.has(trimmed.toLowerCase())) {
-    return trimmed.toLowerCase();
-  }
-  if (AR_TO_EN[trimmed]) return AR_TO_EN[trimmed];
+  const t = String(raw).trim();
+  if (ALLOWED_CATEGORIES.has(t.toLowerCase())) return t.toLowerCase();
+  if (AR_TO_EN[t]) return AR_TO_EN[t];
   return null;
 }
 
@@ -529,10 +578,12 @@ function safeCategory(raw) {
 // ═══════════════════════════════════════════════════
 const state = {
   myName: '', myAvatar: '🎮', roomCode: '', isHost: false,
-  players: [], category: null, mySocketId: null, myScore: 0,
-  currentQuestion: null, currentChoices: [], myChoice: -1,
-  hasAnswered: false, questionServerStart: 0, questionTimeLimit: 15,
-  progressInterval: null
+  players: [], category: null, mySocketId: null,
+  myLocked: false,               // هل أنا مجمّد هذا السؤال؟
+  targetScore: 10,
+  currentChoices: [],
+  currentCorrectIndex: null,
+  removedChoices: new Set()
 };
 
 const CATEGORY_META = {
@@ -551,19 +602,22 @@ const socket = io();
 function toast(msg, type = 'error') {
   const host = $('toastHost');
   const el = document.createElement('div');
-  el.className = 'toast' + (type === 'success' ? ' success' : '');
+  el.className = 'toast' + (type === 'success' ? ' success' : type === 'info' ? ' info' : '');
   el.textContent = msg;
   host.appendChild(el);
-  setTimeout(() => el.remove(), 3600);
+  setTimeout(() => el.remove(), 2900);
 }
 
-// ═══════════════════════════════════════════════════
-// SCREENS
-// ═══════════════════════════════════════════════════
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $('screen-' + name).classList.add('active');
 }
+
+// ═══════════════════════════════════════════════════
+// FROZEN OVERLAY
+// ═══════════════════════════════════════════════════
+function showFrozen() { $('frozenOverlay').classList.add('show'); }
+function hideFrozen() { $('frozenOverlay').classList.remove('show'); }
 
 // ═══════════════════════════════════════════════════
 // CREATE / JOIN
@@ -579,24 +633,21 @@ $('btnJoinRoom').addEventListener('click', () => {
   const name = $('inputName').value.trim();
   const code = $('inputRoomCode').value.trim();
   if (!name) return toast('اكتب اسمك أولاً!');
-  if (!/^\d{4}$/.test(code)) return toast('الكود يجب أن يكون 4 أرقام!');
+  if (!/^\d{4}$/.test(code)) return toast('الكود 4 أرقام!');
   state.myName = name;
   socket.emit('join_room', { code, name, avatar: state.myAvatar });
 });
 
 // ═══════════════════════════════════════════════════
-// SOCKET
+// SOCKET EVENTS
 // ═══════════════════════════════════════════════════
-socket.on('connect', () => {
-  state.mySocketId = socket.id;
-  console.log('✅ متصل بالخادم، socket.id =', socket.id);
-});
+socket.on('connect', () => { state.mySocketId = socket.id; });
 
 socket.on('room_created', ({ code }) => {
   state.roomCode = code; state.isHost = true;
   $('displayRoomCode').textContent = code;
   showScreen('lobby');
-  toast('✅ تم إنشاء الغرفة بنجاح', 'success');
+  toast('✅ تم إنشاء الغرفة', 'success');
 });
 
 socket.on('room_joined', ({ code }) => {
@@ -606,17 +657,9 @@ socket.on('room_joined', ({ code }) => {
   toast('✅ انضممت للغرفة', 'success');
 });
 
-socket.on('error_msg', ({ msg }) => {
-  console.error('❌ خطأ من الخادم:', msg);
-  toast(msg);
-});
-
-socket.on('host_changed', ({ name }) => {
-  state.isHost = false;
-  toast(`👑 المضيف الجديد: ${name}`, 'success');
-});
-
-socket.on('player_left', ({ name }) => toast(`🚪 ${name} غادر اللعبة`));
+socket.on('error_msg', ({ msg }) => { console.error('❌', msg); toast(msg); });
+socket.on('host_changed', ({ name }) => { state.isHost = false; toast(`👑 المضيف: ${name}`, 'success'); });
+socket.on('player_left', ({ name }) => toast(`🚪 ${name} غادر`));
 
 // ═══════════════════════════════════════════════════
 // ROOM UPDATE
@@ -625,6 +668,13 @@ socket.on('room_update', (data) => {
   state.players = data.players;
   state.category = data.category;
   state.isHost = (data.hostId === state.mySocketId);
+  state.targetScore = data.targetScore || 10;
+  $('targetScoreDisplay').textContent = state.targetScore;
+
+  // تحديث الـ live scores فوراً لو إحنا في اللعب
+  if (data.state === 'playing' || data.state === 'reveal') {
+    renderLiveScores(data.players);
+  }
   if (data.state === 'lobby' || data.state === 'category') {
     renderLobby(data);
   }
@@ -659,24 +709,19 @@ function renderLobby(data) {
   if (state.isHost) {
     $('hostControls').classList.remove('hidden');
     $('guestWait').classList.add('hidden');
-
     const startBtn = $('btnStartGame');
     const canStart = (data.players.length >= 2) && !!data.category;
     startBtn.classList.toggle('hidden', !data.category);
     startBtn.disabled = !canStart;
-
     if (!data.category) {
-      startBtn.textContent = 'اختر القسم أولاً';
       startBtn.classList.add('hidden');
     } else if (data.players.length < 2) {
-      startBtn.textContent = '⏳ في انتظار لاعبين آخرين';
+      startBtn.textContent = '⏳ في انتظار لاعبين';
       startBtn.disabled = true;
     } else {
       startBtn.textContent = '🎬 ابدأ اللعبة';
       startBtn.disabled = false;
     }
-
-    // تحديث التمييز للأزرار بناءً على القسم المخزَّن إنجليزياً
     document.querySelectorAll('.cat-btn').forEach(b => {
       b.classList.toggle('selected', b.dataset.category === data.category);
       b.disabled = false;
@@ -685,75 +730,74 @@ function renderLobby(data) {
     $('hostControls').classList.add('hidden');
     $('guestWait').classList.remove('hidden');
     $('btnStartGame').classList.add('hidden');
-
-    const guestCatIcon = $('guestCategoryDisplay').querySelector('.cat-icon');
-    const guestCatName = $('guestCategoryDisplay').querySelector('.cat-name-text');
-
+    const ic = $('guestCategoryDisplay').querySelector('.cat-icon');
+    const nm = $('guestCategoryDisplay').querySelector('.cat-name-text');
     if (data.category && CATEGORY_META[data.category]) {
-      const meta = CATEGORY_META[data.category];
-      guestCatIcon.textContent = meta.icon;
-      guestCatName.textContent = meta.name;
+      const m = CATEGORY_META[data.category];
+      ic.textContent = m.icon; nm.textContent = m.name;
       $('guestWaitMsg').innerHTML = 'في انتظار المضيف ليبدأ المباراة<span class="dot"></span>';
     } else {
-      guestCatIcon.textContent = '❓';
-      guestCatName.textContent = 'في انتظار اختيار المضيف';
+      ic.textContent = '❓'; nm.textContent = 'في انتظار اختيار المضيف';
       $('guestWaitMsg').innerHTML = 'في انتظار المضيف ليختار القسم<span class="dot"></span>';
     }
   }
 }
 
 // ═══════════════════════════════════════════════════
-// HOST: category selection (مع تطبيع صارم)
+// HOST: category selection
 // ═══════════════════════════════════════════════════
 document.querySelectorAll('.cat-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     if (!state.isHost) return;
-
-    // اقرأ القيمة من data-category أو data-cat
     const raw = btn.dataset.category || btn.dataset.cat || '';
-
-    // طبّعها عبر القائمة البيضاء
-    const category = safeCategory(raw);
-
-    if (!category) {
-      console.error(`❌ قيمة قسم غير صالحة: "${raw}"`);
-      return toast(`قسم غير صالح: ${raw}`);
-    }
-
-    console.log(`📤 إرسال قسم للسيرفر: "${category}" (الأصلي: "${raw}")`);
-    socket.emit('select_category', { category });
+    const cat = safeCategory(raw);
+    if (!cat) return toast(`قسم غير صالح: ${raw}`);
+    socket.emit('select_category', { category: cat });
   });
 });
 
 $('btnStartGame').addEventListener('click', () => socket.emit('start_game'));
-
 $('btnCopyCode').addEventListener('click', () => {
   if (!state.roomCode) return;
-  navigator.clipboard.writeText(state.roomCode).then(() => toast('✅ تم نسخ الكود', 'success'));
+  navigator.clipboard.writeText(state.roomCode).then(() => toast('✅ تم النسخ', 'success'));
 });
 
 // ═══════════════════════════════════════════════════
-// GAME
+// GAME START
 // ═══════════════════════════════════════════════════
-socket.on('game_started', ({ category, categoryMeta, totalQuestions, questionTime }) => {
-  state.category = category;
-  state.questionTimeLimit = questionTime;
-  state.myScore = 0;
+socket.on('game_started', ({ targetScore }) => {
+  state.targetScore = targetScore || 10;
+  state.myLocked = false;
+  $('targetScoreDisplay').textContent = state.targetScore;
   showScreen('game');
-  $('qCounter').textContent = `0 / ${totalQuestions}`;
+  hideFrozen();
+  $('qCounter').textContent = 'سؤال 1';
 });
 
-socket.on('new_question', ({ index, total, question, choices, timeLimit, serverStart }) => {
-  state.currentQuestion = question;
+// ═══════════════════════════════════════════════════
+// NEW QUESTION
+// ═══════════════════════════════════════════════════
+socket.on('new_question', ({ index, question, choices, targetScore, players }) => {
   state.currentChoices = choices;
-  state.myChoice = -1;
-  state.hasAnswered = false;
-  state.questionServerStart = serverStart;
-  state.questionTimeLimit = timeLimit;
+  state.removedChoices = new Set();
+  state.myLocked = false;
+  state.currentCorrectIndex = null;
+  if (targetScore) state.targetScore = targetScore;
 
-  $('qCounter').textContent = `${index + 1} / ${total}`;
+  hideFrozen();
+  $('qCounter').textContent = `سؤال ${index + 1}`;
   $('questionCard').textContent = question;
+  $('targetScoreDisplay').textContent = state.targetScore;
 
+  // تحديث اللاعبين
+  if (players) {
+    state.players = players.map(p => ({
+      ...p,
+      locked: false
+    }));
+  }
+
+  // بناء الخيارات
   const grid = $('choicesGrid');
   grid.innerHTML = '';
   const letters = ['أ', 'ب', 'ج', 'د'];
@@ -766,113 +810,188 @@ socket.on('new_question', ({ index, total, question, choices, timeLimit, serverS
     grid.appendChild(btn);
   });
 
-  startTimer(timeLimit);
-  renderLiveScores();
+  renderLiveScores(state.players);
 });
 
+// ═══════════════════════════════════════════════════
+// SUBMIT ANSWER
+// ═══════════════════════════════════════════════════
 function submitAnswer(choiceIndex, btn) {
-  if (state.hasAnswered) return;
-  state.hasAnswered = true;
-  state.myChoice = choiceIndex;
-  document.querySelectorAll('.choice-btn').forEach(b => { b.disabled = true; });
-  btn.classList.add('selected');
+  if (state.myLocked) return;
+  const btnEl = btn;
+  // تعطيل اللاعب مؤقتاً حتى يأتي تأكيد من السيرفر
+  btnEl.disabled = true;
+  btnEl.classList.add('pending');
   socket.emit('submit_answer', { choiceIndex });
 }
 
-socket.on('player_answered', ({ socketId, name }) => {
-  const player = state.players.find(p => p.name === name);
-  if (player) { player.answered = true; renderLiveScores(); }
+// ═══════════════════════════════════════════════════
+// ✅ إجابة صحيحة — نقطة + نهاية فورية للسؤال
+// ═══════════════════════════════════════════════════
+socket.on('answer_correct', ({ winnerName, winnerSocketId, correctIndex, scores }) => {
+  state.currentCorrectIndex = correctIndex;
+  hideFrozen();
+
+  // تعطيل كل الأزرار + إبراز الصحيحة
+  document.querySelectorAll('.choice-btn').forEach((b, i) => {
+    b.disabled = true;
+    b.classList.remove('pending');
+    if (i === correctIndex) {
+      b.classList.add('correct');
+    }
+  });
+
+  // تحديث النقاط
+  if (scores) {
+    state.players = scores.map(s => ({
+      ...s,
+      locked: state.players.find(p => p.name === s.name)?.locked || false
+    }));
+    renderLiveScores(state.players);
+  }
+
+  // إشعار
+  if (winnerSocketId === state.mySocketId) {
+    toast(`🎉 إجابة صحيحة! +1`, 'success');
+  } else {
+    toast(`✅ ${winnerName} أجاب صح! +1`, 'success');
+  }
+
+  // الانتقال للسؤال التالي يحدث تلقائياً من السيرفر بعد ~1.5 ثانية
 });
 
-socket.on('question_result', ({ correctIndex, correctAnswer, scores }) => {
-  stopTimer();
+// ═══════════════════════════════════════════════════
+// ❌ إجابة خاطئة — تجميد اللاعب + حذف الخيار للجميع
+// ═══════════════════════════════════════════════════
+socket.on('answer_wrong', ({ playerName, playerSocketId, choiceIndex, removedChoices, lockedPlayers, scores }) => {
+  // 1) حدّث قائمة الخيارات المحذوفة
+  state.removedChoices = new Set(removedChoices || []);
+
+  // 2) حدّث حالة اللاعبين
+  if (scores) {
+    state.players = scores.map(s => ({
+      ...s,
+      locked: (lockedPlayers || []).includes(s.name)
+    }));
+  }
+
+  // 3) هل أنا اللاعب الذي أخطأ؟
+  const iAmTheWrongPlayer = (playerSocketId === state.mySocketId);
+
+  if (iAmTheWrongPlayer) {
+    // أنا المجمّد — أعرض التجميد
+    state.myLocked = true;
+    showFrozen();
+    // أبرز زرّي الذي اخترته بالأحمر
+    document.querySelectorAll('.choice-btn').forEach((b, i) => {
+      b.disabled = true;
+      if (i === choiceIndex) {
+        b.classList.add('wrong');
+        b.classList.remove('pending');
+      }
+    });
+    toast(`❌ إجابة خاطئة! أنت مُجمّد هذا السؤال`, 'error');
+  } else {
+    // لست أنا — فقط أزيل الخيار المختار خطأً
+    document.querySelectorAll('.choice-btn').forEach((b, i) => {
+      if ((removedChoices || []).includes(i)) {
+        b.classList.add('removed');
+        b.disabled = true;
+        b.classList.remove('pending');
+      } else if (!state.myLocked && !b.classList.contains('correct')) {
+        // أبقيه مفعّلاً إذا لم أكن مجمّداً
+        b.disabled = false;
+      }
+    });
+    toast(`❌ ${playerName} أخطأ — الخيار محذوف`, 'info');
+  }
+
+  renderLiveScores(state.players);
+});
+
+// ═══════════════════════════════════════════════════
+// كشف الإجابة (عند تجميد الجميع)
+// ═══════════════════════════════════════════════════
+socket.on('round_revealed', ({ correctIndex, correctAnswer, noWinner }) => {
+  // إظهار الإجابة الصحيحة للجميع
   document.querySelectorAll('.choice-btn').forEach((b, i) => {
     b.disabled = true;
     if (i === correctIndex) b.classList.add('correct');
-    else if (i === state.myChoice) b.classList.add('wrong');
   });
-  scores.forEach(s => {
-    const p = state.players.find(x => x.name === s.name);
-    if (p) { p.score = s.score; p.answered = s.answered; }
-    if (s.name === state.myName) state.myScore = s.score;
-  });
-  renderLiveScores();
-
-  const badge = document.createElement('div');
-  badge.className = 'reveal-badge';
-  const iGotIt = (state.myChoice === correctIndex);
-  badge.textContent = iGotIt ? '✅' : '❌';
-  badge.style.color = iGotIt ? '#22C55E' : '#EF4444';
-  badge.style.textShadow = iGotIt ? '0 0 40px #22C55E' : '0 0 40px #EF4444';
-  $('screen-game').appendChild(badge);
-  setTimeout(() => badge.remove(), 1100);
-
-  toast(iGotIt ? '🎉 إجابة صحيحة!' : `❌ الإجابة الصحيحة: ${correctAnswer}`,
-        iGotIt ? 'success' : 'error');
+  if (noWinner) {
+    toast('⌛ انتهى السؤال — لم يُجب أحد', 'info');
+  }
 });
 
-function renderLiveScores() {
+// ═══════════════════════════════════════════════════
+// LIVE SCORES
+// ═══════════════════════════════════════════════════
+function renderLiveScores(players) {
   const container = $('liveScores');
   container.innerHTML = '';
-  const sorted = [...state.players].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const list = players && players.length ? players : state.players;
+  const sorted = [...list].sort((a, b) => (b.score || 0) - (a.score || 0));
   sorted.forEach(p => {
     const chip = document.createElement('div');
     chip.className = 'score-chip';
     if (p.name === state.myName) chip.classList.add('me');
-    if (p.answered) chip.classList.add('answered');
-    chip.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="sc-score">${p.score || 0}</span>`;
+    if (p.locked) chip.classList.add('locked');
+    const stateIcon = p.locked ? '🧊' : '';
+    chip.innerHTML = `
+      <span class="sc-avatar">${escapeHtml(p.avatar || '🎮')}</span>
+      <span>${escapeHtml(p.name)}</span>
+      <span class="sc-score">${p.score || 0}</span>
+      ${stateIcon ? `<span class="sc-state">${stateIcon}</span>` : ''}
+    `;
     container.appendChild(chip);
   });
 }
 
-function startTimer(seconds) {
-  stopTimer();
-  const pill = $('timerPill');
-  const fill = $('progressFill');
-  function update() {
-    const elapsed = (Date.now() - state.questionServerStart) / 1000;
-    const remaining = Math.max(0, seconds - elapsed);
-    pill.textContent = Math.ceil(remaining);
-    pill.classList.toggle('danger', remaining <= 5);
-    fill.style.width = `${(remaining / seconds) * 100}%`;
-  }
-  update();
-  state.progressInterval = setInterval(update, 80);
-}
-function stopTimer() { clearInterval(state.progressInterval); state.progressInterval = null; }
-
-socket.on('game_over', ({ reason, rankings }) => {
-  stopTimer();
+// ═══════════════════════════════════════════════════
+// GAME OVER
+// ═══════════════════════════════════════════════════
+socket.on('game_over', ({ winnerName, reason, rankings }) => {
+  hideFrozen();
   showScreen('results');
+  $('winnerNameDisplay').textContent = winnerName ? `🏅 ${winnerName}` : '';
   $('gameOverReason').textContent = reason || '';
+
   const list = $('resultsList');
   list.innerHTML = '';
   const medals = ['🥇', '🥈', '🥉', '4️⃣'];
+
   rankings.forEach((p, i) => {
     const row = document.createElement('div');
     row.className = `result-row rank-${p.rank}`;
     row.innerHTML = `
       <div class="result-info">
         <span class="result-rank">${medals[i] || '#' + p.rank}</span>
+        <span class="result-avatar" style="font-size:22px;">${escapeHtml(p.avatar || '🎮')}</span>
         <span class="result-name">${escapeHtml(p.name)}</span>
       </div>
       <span class="result-score">${p.score}</span>
     `;
     list.appendChild(row);
   });
+
   $('btnPlayAgain').classList.toggle('hidden', !state.isHost);
 });
 
 $('btnPlayAgain').addEventListener('click', () => socket.emit('play_again'));
 
 socket.on('room_reset', () => {
-  state.myScore = 0;
+  state.myLocked = false;
   state.category = null;
+  state.removedChoices = new Set();
+  hideFrozen();
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
   showScreen('lobby');
   toast('🔄 لعبة جديدة جاهزة!', 'success');
 });
 
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
