@@ -423,23 +423,23 @@
     </div>
 
     <!-- Host: category selection -->
+    <!-- ⚠️ الأزرار تحمل data-category + data-cat بنفس القيمة الإنجليزية -->
     <div id="hostControls" class="flex-col gap-8">
       <div class="section-title" style="margin-bottom:2px;">اختر القسم</div>
       <div class="cat-grid">
-        <!-- ⚠️ data-cat يجب أن يطابق تماماً المفاتيح في CATEGORIES بالسيرفر -->
-        <button class="cat-btn" data-cat="football" type="button">
+        <button class="cat-btn" type="button" data-category="football" data-cat="football">
           <span class="cat-icon">⚽</span>
           <span class="cat-name">كرة القدم</span>
         </button>
-        <button class="cat-btn" data-cat="general" type="button">
+        <button class="cat-btn" type="button" data-category="general" data-cat="general">
           <span class="cat-icon">🧠</span>
           <span class="cat-name">معلومات عامة</span>
         </button>
-        <button class="cat-btn" data-cat="anime" type="button">
+        <button class="cat-btn" type="button" data-category="anime" data-cat="anime">
           <span class="cat-icon">🎌</span>
           <span class="cat-name">أنمي</span>
         </button>
-        <button class="cat-btn" data-cat="islamic" type="button">
+        <button class="cat-btn" type="button" data-category="islamic" data-cat="islamic">
           <span class="cat-icon">🕌</span>
           <span class="cat-name">إسلاميات</span>
         </button>
@@ -501,9 +501,32 @@
 </div>
 
 <script>
-// ============================================
+// ═══════════════════════════════════════════════════
+// قائمة بيضاء صارمة للأقسام (تُرسل كإنجليزي حصراً)
+// ═══════════════════════════════════════════════════
+const ALLOWED_CATEGORIES = new Set(['football', 'general', 'anime', 'islamic']);
+
+// تحويل عربي → إنجليزي (طبقة أمان إضافية)
+const AR_TO_EN = {
+  'كرة القدم': 'football', 'كرة قدم': 'football', 'كوره': 'football', 'كورة': 'football',
+  'معلومات عامة': 'general', 'معلومات عامه': 'general', 'معلومات': 'general',
+  'أنمي': 'anime', 'انمي': 'anime', 'أنيمي': 'anime', 'انيمي': 'anime',
+  'إسلاميات': 'islamic', 'اسلاميات': 'islamic', 'إسلامي': 'islamic', 'اسلامي': 'islamic'
+};
+
+function safeCategory(raw) {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  if (ALLOWED_CATEGORIES.has(trimmed.toLowerCase())) {
+    return trimmed.toLowerCase();
+  }
+  if (AR_TO_EN[trimmed]) return AR_TO_EN[trimmed];
+  return null;
+}
+
+// ═══════════════════════════════════════════════════
 // STATE
-// ============================================
+// ═══════════════════════════════════════════════════
 const state = {
   myName: '', myAvatar: '🎮', roomCode: '', isHost: false,
   players: [], category: null, mySocketId: null, myScore: 0,
@@ -522,9 +545,9 @@ const CATEGORY_META = {
 const $ = id => document.getElementById(id);
 const socket = io();
 
-// ============================================
+// ═══════════════════════════════════════════════════
 // TOAST
-// ============================================
+// ═══════════════════════════════════════════════════
 function toast(msg, type = 'error') {
   const host = $('toastHost');
   const el = document.createElement('div');
@@ -534,17 +557,17 @@ function toast(msg, type = 'error') {
   setTimeout(() => el.remove(), 3600);
 }
 
-// ============================================
+// ═══════════════════════════════════════════════════
 // SCREENS
-// ============================================
+// ═══════════════════════════════════════════════════
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $('screen-' + name).classList.add('active');
 }
 
-// ============================================
+// ═══════════════════════════════════════════════════
 // CREATE / JOIN
-// ============================================
+// ═══════════════════════════════════════════════════
 $('btnCreateRoom').addEventListener('click', () => {
   const name = $('inputName').value.trim();
   if (!name) return toast('اكتب اسمك أولاً!');
@@ -561,9 +584,9 @@ $('btnJoinRoom').addEventListener('click', () => {
   socket.emit('join_room', { code, name, avatar: state.myAvatar });
 });
 
-// ============================================
+// ═══════════════════════════════════════════════════
 // SOCKET
-// ============================================
+// ═══════════════════════════════════════════════════
 socket.on('connect', () => {
   state.mySocketId = socket.id;
   console.log('✅ متصل بالخادم، socket.id =', socket.id);
@@ -595,9 +618,9 @@ socket.on('host_changed', ({ name }) => {
 
 socket.on('player_left', ({ name }) => toast(`🚪 ${name} غادر اللعبة`));
 
-// ============================================
+// ═══════════════════════════════════════════════════
 // ROOM UPDATE
-// ============================================
+// ═══════════════════════════════════════════════════
 socket.on('room_update', (data) => {
   state.players = data.players;
   state.category = data.category;
@@ -653,8 +676,9 @@ function renderLobby(data) {
       startBtn.disabled = false;
     }
 
+    // تحديث التمييز للأزرار بناءً على القسم المخزَّن إنجليزياً
     document.querySelectorAll('.cat-btn').forEach(b => {
-      b.classList.toggle('selected', b.dataset.cat === data.category);
+      b.classList.toggle('selected', b.dataset.category === data.category);
       b.disabled = false;
     });
   } else {
@@ -678,15 +702,25 @@ function renderLobby(data) {
   }
 }
 
-// ============================================
-// HOST: category selection
-//    ⚠️ يقرأ data-cat ويرسله للسيرفر كما هو
-// ============================================
+// ═══════════════════════════════════════════════════
+// HOST: category selection (مع تطبيع صارم)
+// ═══════════════════════════════════════════════════
 document.querySelectorAll('.cat-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     if (!state.isHost) return;
-    const category = btn.dataset.cat;
-    console.log(`🎯 اختيار قسم: "${category}"`);
+
+    // اقرأ القيمة من data-category أو data-cat
+    const raw = btn.dataset.category || btn.dataset.cat || '';
+
+    // طبّعها عبر القائمة البيضاء
+    const category = safeCategory(raw);
+
+    if (!category) {
+      console.error(`❌ قيمة قسم غير صالحة: "${raw}"`);
+      return toast(`قسم غير صالح: ${raw}`);
+    }
+
+    console.log(`📤 إرسال قسم للسيرفر: "${category}" (الأصلي: "${raw}")`);
     socket.emit('select_category', { category });
   });
 });
@@ -698,9 +732,9 @@ $('btnCopyCode').addEventListener('click', () => {
   navigator.clipboard.writeText(state.roomCode).then(() => toast('✅ تم نسخ الكود', 'success'));
 });
 
-// ============================================
+// ═══════════════════════════════════════════════════
 // GAME
-// ============================================
+// ═══════════════════════════════════════════════════
 socket.on('game_started', ({ category, categoryMeta, totalQuestions, questionTime }) => {
   state.category = category;
   state.questionTimeLimit = questionTime;
