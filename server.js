@@ -143,25 +143,31 @@ function generateRoomCode() {
 const rooms = {};
 
 const CONSTANTS = {
-  TARGET_SCORE: 10,        // 🎯 الهدف
+  TARGET_SCORE: 10,
   MAX_PLAYERS: 4,
   MIN_PLAYERS: 2,
-  NEXT_QUESTION_DELAY: 1500,   // بعد إجابة صحيحة
-  REVEAL_DELAY: 2200           // بعد كشف الإجابة (عند التجميد الكامل)
+  NEXT_QUESTION_DELAY: 1500,
+  REVEAL_DELAY: 2200
 };
+
+// حالات الغرفة المسموح بالانضمام فيها (لم تبدأ اللعبة فعلاً)
+const JOINABLE_STATES = new Set(['lobby', 'category']);
 
 function createRoom(hostSocketId) {
   return {
     code: generateRoomCode(),
     hostId: hostSocketId,
     players: [],
-    state: 'lobby',           // lobby | category | playing | reveal | finished
+    // ⚠️ الحالة الافتراضية دائماً lobby عند الإنشاء
+    state: 'lobby',
+    // category/categoryKey تُحدّثان عند اختيار المضيف،
+    // لكن state يبقى 'lobby' — نستخدم flag منفصل لتتبع اختيار القسم
     category: null,
     categoryKey: null,
-    questionPool: [],         // قائمة الأسئلة المخلوطة
+    questionPool: [],
     questionIndex: -1,
     currentQuestion: null,
-    removedChoices: new Set(),   // فهارس الخيارات المحذوفة (سؤال حالي)
+    removedChoices: new Set(),
     lastCorrectIndex: null,
     roundWinner: null,
     advanceTimer: null
@@ -194,10 +200,9 @@ function broadcastRoom(room) {
 }
 
 // ═══════════════════════════════════════════════════
-// 5. منطق الأسئلة — بدون تايمر
+// 5. منطق الأسئلة
 // ═══════════════════════════════════════════════════
 function pickNextQuestion(room) {
-  // إذا نفدت الأسئلة → إعادة خلط
   if (room.questionIndex + 1 >= room.questionPool.length) {
     const fresh = QUESTION_BANK[room.category] || [];
     room.questionPool = shuffleArray(fresh).map(shuffleQuestionChoices);
@@ -211,7 +216,6 @@ function pickNextQuestion(room) {
 function sendNextQuestion(room) {
   if (room.state === 'finished') return;
 
-  // فحص الفائز قبل بدء سؤال جديد
   const winner = room.players.find(p => p.score >= CONSTANTS.TARGET_SCORE);
   if (winner) return endGame(room, winner);
 
@@ -257,6 +261,9 @@ function endGame(room, winner) {
 io.on('connection', (socket) => {
   console.log(`🔌 متصل: ${socket.id}`);
 
+  // ============================================
+  // CREATE ROOM
+  // ============================================
   socket.on('create_room', ({ name, avatar }) => {
     if (!name || !name.trim()) return socket.emit('error_msg', { msg: 'اكتب اسمك أولاً!' });
     const room = createRoom(socket.id);
@@ -268,13 +275,26 @@ io.on('connection', (socket) => {
     socket.data.roomCode = room.code;
     socket.emit('room_created', { code: room.code });
     broadcastRoom(room);
+    console.log(`🏠 [${room.code}] تم إنشاء الغرفة بواسطة ${room.players[0].name}`);
   });
 
+  // ============================================
+  // ✅ JOIN ROOM — مُصلَّح
+  //   يسمح بالانضمام في حالتي 'lobby' و 'category'
+  //   يرفض فقط عندما تكون اللعبة قد بدأت فعلاً (playing / reveal / finished)
+  // ============================================
   socket.on('join_room', ({ code, name, avatar }) => {
     if (!name || !code) return socket.emit('error_msg', { msg: 'اكتب اسمك والكود!' });
+
     const room = rooms[code];
     if (!room) return socket.emit('error_msg', { msg: 'الغرفة غير موجودة!' });
-    if (room.state !== 'lobby') return socket.emit('error_msg', { msg: 'اللعبة بدأت بالفعل!' });
+
+    // ⚠️ التعديل الرئيسي: نقبل الانضمام إلا إذا كانت اللعبة قد بدأت فعلاً
+    if (!JOINABLE_STATES.has(room.state)) {
+      console.log(`🚫 [${room.code}] رفض انضمام ${name} — الحالة: ${room.state}`);
+      return socket.emit('error_msg', { msg: 'اللعبة بدأت بالفعل! انتظر الجولة القادمة.' });
+    }
+
     if (room.players.length >= CONSTANTS.MAX_PLAYERS)
       return socket.emit('error_msg', { msg: `الغرفة ممتلئة (${CONSTANTS.MAX_PLAYERS} لاعبين)!` });
 
@@ -290,13 +310,24 @@ io.on('connection', (socket) => {
     socket.data.roomCode = room.code;
     socket.emit('room_joined', { code: room.code });
     broadcastRoom(room);
+    console.log(`👥 [${room.code}] انضم ${cleanName} — عدد اللاعبين: ${room.players.length} (الحالة: ${room.state})`);
   });
 
-  // ===== اختيار القسم =====
+  // ============================================
+  // ✅ SELECT CATEGORY — مُصلَّح
+  //   ⚠️ لا نغيّر room.state إطلاقاً هنا
+  //   نحدّث فقط category + categoryKey
+  // ============================================
   socket.on('select_category', ({ category }) => {
     const room = rooms[socket.data.roomCode];
     if (!room) return;
-    if (room.hostId !== socket.id) return socket.emit('error_msg', { msg: 'فقط المضيف!' });
+    if (room.hostId !== socket.id)
+      return socket.emit('error_msg', { msg: 'فقط المضيف!' });
+
+    // ⚠️ لا يُسمح بتغيير القسم بعد بدء اللعبة
+    if (!JOINABLE_STATES.has(room.state)) {
+      return socket.emit('error_msg', { msg: 'لا يمكن تغيير القسم بعد بدء اللعبة!' });
+    }
 
     const normalized = normalizeCategory(category);
     let filename = CATEGORY_MAP[normalized];
@@ -307,6 +338,7 @@ io.on('connection', (socket) => {
     }
 
     if (!filename) {
+      console.error(`❌ قسم غير معروف: "${category}"`);
       return socket.emit('error_msg', { msg: `قسم غير معروف: "${category}"` });
     }
     const bank = QUESTION_BANK[filename];
@@ -314,27 +346,38 @@ io.on('connection', (socket) => {
       return socket.emit('error_msg', { msg: `لا توجد أسئلة في "${CATEGORY_DISPLAY[filename].nameAr}"` });
     }
 
+    // ✅ فقط نحدّث بيانات القسم — بدون أي تغيير في room.state
     room.category = filename;
     room.categoryKey = CATEGORY_DISPLAY[filename].key;
-    room.state = 'category';
-    console.log(`✅ [${room.code}] القسم: ${room.categoryKey} (${bank.length} سؤال)`);
+
+    console.log(`✅ [${room.code}] اختار المضيف القسم: ${room.categoryKey} (${bank.length} سؤال) — الحالة تبقى: ${room.state}`);
     broadcastRoom(room);
   });
 
-  // ===== بدء اللعبة =====
+  // ============================================
+  // ✅ START GAME — هنا فقط تُغيَّر الحالة إلى playing
+  // ============================================
   socket.on('start_game', () => {
     const room = rooms[socket.data.roomCode];
     if (!room) return;
     if (room.hostId !== socket.id) return socket.emit('error_msg', { msg: 'فقط المضيف!' });
+    if (!JOINABLE_STATES.has(room.state))
+      return socket.emit('error_msg', { msg: 'اللعبة بدأت بالفعل!' });
     if (room.players.length < CONSTANTS.MIN_PLAYERS)
       return socket.emit('error_msg', { msg: `محتاج ${CONSTANTS.MIN_PLAYERS} لاعبين!` });
     if (!room.category) return socket.emit('error_msg', { msg: 'اختر القسم أولاً!' });
 
     const pool = QUESTION_BANK[room.category];
+    if (!pool || pool.length === 0) {
+      return socket.emit('error_msg', { msg: 'لا توجد أسئلة في هذا القسم!' });
+    }
+
     room.questionPool = shuffleArray(pool).map(shuffleQuestionChoices);
     room.questionIndex = -1;
     room.removedChoices = new Set();
     room.players.forEach(p => { p.score = 0; p.lockedThisRound = false; });
+
+    console.log(`🎬 [${room.code}] بدء اللعبة — ${room.players.length} لاعب، القسم: ${room.categoryKey}`);
 
     io.to(room.code).emit('game_started', {
       category: room.categoryKey,
@@ -342,12 +385,13 @@ io.on('connection', (socket) => {
       targetScore: CONSTANTS.TARGET_SCORE
     });
     broadcastRoom(room);
+    // state يتحول إلى 'playing' داخل sendNextQuestion
     setTimeout(() => sendNextQuestion(room), 500);
   });
 
-  // ═══════════════════════════════════════════════════
-  // إرسال الإجابة — المنطق الأساسي الجديد
-  // ═══════════════════════════════════════════════════
+  // ============================================
+  // SUBMIT ANSWER
+  // ============================================
   socket.on('submit_answer', ({ choiceIndex }) => {
     const room = rooms[socket.data.roomCode];
     if (!room || room.state !== 'playing' || !room.currentQuestion) return;
@@ -355,17 +399,12 @@ io.on('connection', (socket) => {
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player) return;
-
-    // 🚫 إذا كان اللاعب مجمّداً هذا الدور → تجاهل
     if (player.lockedThisRound) return;
-
-    // 🚫 إذا كان الخيار محذوفاً مسبقاً → تجاهل
     if (room.removedChoices.has(choiceIndex)) return;
 
     const isCorrect = (choiceIndex === room.currentQuestion.correct_index);
 
     if (isCorrect) {
-      // ✅ إجابة صحيحة → نقطة + نهاية فورية للسؤال
       player.score += 1;
       player.lockedThisRound = true;
       room.lastCorrectIndex = choiceIndex;
@@ -382,7 +421,6 @@ io.on('connection', (socket) => {
       });
       broadcastRoom(room);
 
-      // فحص الفوز باللعبة أو الانتقال للسؤال التالي
       clearTimeout(room.advanceTimer);
       room.advanceTimer = setTimeout(() => {
         if (player.score >= CONSTANTS.TARGET_SCORE) {
@@ -393,7 +431,6 @@ io.on('connection', (socket) => {
       }, CONSTANTS.NEXT_QUESTION_DELAY);
 
     } else {
-      // ❌ إجابة خاطئة → تجميد اللاعب + حذف الخيار للجميع
       player.lockedThisRound = true;
       room.removedChoices.add(choiceIndex);
 
@@ -409,10 +446,8 @@ io.on('connection', (socket) => {
       });
       broadcastRoom(room);
 
-      // فحص: هل كل اللاعبين مجمّدون؟
       const allLocked = room.players.every(p => p.lockedThisRound);
       if (allLocked) {
-        // كشف الإجابة الصحيحة والانتقال
         room.state = 'reveal';
         room.lastCorrectIndex = room.currentQuestion.correct_index;
         clearTimeout(room.advanceTimer);
@@ -428,12 +463,16 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ============================================
+  // PLAY AGAIN — إعادة الغرفة إلى lobby
+  // ============================================
   socket.on('play_again', () => {
     const room = rooms[socket.data.roomCode];
     if (!room) return;
     if (room.hostId !== socket.id) return socket.emit('error_msg', { msg: 'فقط المضيف!' });
     clearTimeout(room.advanceTimer);
-    room.state = 'lobby';
+
+    room.state = 'lobby';            // ✅ إرجاع الحالة إلى lobby
     room.category = null;
     room.categoryKey = null;
     room.questionPool = [];
@@ -441,10 +480,15 @@ io.on('connection', (socket) => {
     room.currentQuestion = null;
     room.removedChoices = new Set();
     room.players.forEach(p => { p.score = 0; p.lockedThisRound = false; });
+
     io.to(room.code).emit('room_reset');
     broadcastRoom(room);
+    console.log(`🔄 [${room.code}] إعادة اللعبة — الحالة: lobby`);
   });
 
+  // ============================================
+  // DISCONNECT
+  // ============================================
   socket.on('disconnect', () => {
     const code = socket.data.roomCode;
     if (!code) return;
@@ -456,6 +500,7 @@ io.on('connection', (socket) => {
     if (room.players.length === 0) {
       clearTimeout(room.advanceTimer);
       delete rooms[code];
+      console.log(`🗑️ [${code}] تم حذف الغرفة`);
       return;
     }
     if (room.hostId === socket.id) {
@@ -464,7 +509,6 @@ io.on('connection', (socket) => {
     }
     io.to(room.code).emit('player_left', { name: leaving ? leaving.name : 'لاعب' });
 
-    // فحص حالة اللعبة بعد المغادرة
     if (room.state === 'playing') {
       const remaining = room.players.filter(p => !p.lockedThisRound);
       if (remaining.length === 0) {
@@ -484,5 +528,6 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🎯 ع السريع يعمل على المنفذ ${PORT}`);
   console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`🎮 الهدف: ${CONSTANTS.TARGET_SCORE} نقاط | بدون تايمر\n`);
+  console.log(`🎮 الهدف: ${CONSTANTS.TARGET_SCORE} نقاط | بدون تايمر`);
+  console.log(`🚪 الحالات المسموح بالانضمام فيها: ${[...JOINABLE_STATES].join(', ')}\n`);
 });
