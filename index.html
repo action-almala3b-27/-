@@ -15,7 +15,8 @@
     --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
   html, body {
-    width:100vw; height:100vh; height:100dvh; overflow:hidden; position:fixed; inset:0;
+    width:100vw; height:100vh; height:100dvh;
+    overflow:hidden; position:fixed; inset:0;
     font-family:'Cairo',sans-serif; color:var(--text);
     background:
       radial-gradient(ellipse 60% 40% at 50% 0%, rgba(236,72,153,0.18), transparent 60%),
@@ -23,6 +24,7 @@
       linear-gradient(180deg, #0c0616 0%, #09090B 50%, #0c0616 100%);
     -webkit-font-smoothing:antialiased;
     user-select:none; -webkit-user-select:none;
+    overscroll-behavior:none;
   }
   .screen {
     position:absolute; inset:0; width:100%; height:100%;
@@ -90,6 +92,7 @@
     background:linear-gradient(90deg, transparent, rgba(196,132,252,0.35), transparent);
   }
 
+  /* ============ LOBBY ============ */
   .lobby-wrap {
     flex:1; display:flex; flex-direction:column; gap:12px;
     max-width:440px; width:100%; margin:0 auto; min-height:0; overflow:hidden;
@@ -167,10 +170,11 @@
     50% { opacity:0.4; transform:scale(0.8); }
   }
 
-  /* ============ GAME ============ */
+  /* ============ GAME — Fixed layout ============ */
   .game-wrap {
-    flex:1; display:flex; flex-direction:column; gap:8px;
-    max-width:500px; width:100%; margin:0 auto; min-height:0; overflow:hidden;
+    flex:1; display:flex; flex-direction:column; gap:10px;
+    max-width:520px; width:100%; margin:0 auto;
+    min-height:0; overflow:hidden;
   }
   .game-top {
     display:flex; justify-content:space-between; align-items:center;
@@ -178,52 +182,80 @@
   }
   .q-pill {
     background:rgba(139,92,246,0.15); border:1px solid rgba(196,132,252,0.35);
-    padding:5px 12px; border-radius:20px; font-size:12px; font-weight:900;
+    padding:6px 14px; border-radius:20px; font-size:12px; font-weight:900;
     color:var(--violet-light); line-height:1.3;
   }
   .target-pill {
     background:linear-gradient(90deg, rgba(251,191,36,0.18), rgba(251,191,36,0.06));
     border:1px solid rgba(251,191,36,0.45);
-    padding:5px 12px; border-radius:20px; font-size:12px; font-weight:900;
+    padding:6px 14px; border-radius:20px; font-size:12px; font-weight:900;
     color:var(--gold); line-height:1.3;
   }
 
+  /* Question card — fixed height */
   .question-card {
-    border-radius:18px; padding:16px 14px; text-align:center;
-    font-size:16px; font-weight:800; line-height:1.55;
-    display:flex; align-items:center; justify-content:center;
-    flex-shrink:0; min-height:90px; max-height:130px; overflow:hidden;
+    border-radius:18px;
+    padding:18px 16px;
+    text-align:center;
+    font-size:17px;
+    font-weight:800;
+    line-height:1.55;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+    min-height:110px;
+    max-height:150px;
+    overflow:hidden;
   }
 
+  /* Choices — fill remaining space evenly */
   .choices-grid {
-    display:grid; grid-template-columns:1fr; gap:8px;
-    flex:1; min-height:0; align-content:stretch;
+    display:grid;
+    grid-template-columns:1fr;
+    grid-template-rows:repeat(4, 1fr);
+    gap:8px;
+    flex:1;
+    min-height:0;
   }
   .choice-btn {
-    padding:12px 14px; background:rgba(255,255,255,0.04);
-    border:1.5px solid rgba(255,255,255,0.12); border-radius:14px;
-    color:#F4F4F5; font-family:inherit; font-size:14px; font-weight:800;
-    line-height:1.35; cursor:pointer; transition:all .2s ease;
-    text-align:right; display:flex; align-items:center; gap:10px;
-    min-height:0; overflow:hidden;
+    padding:12px 14px;
+    background:rgba(255,255,255,0.04);
+    border:1.5px solid rgba(255,255,255,0.12);
+    border-radius:14px;
+    color:#F4F4F5;
+    font-family:inherit;
+    font-size:14px;
+    font-weight:800;
+    line-height:1.35;
+    cursor:pointer;
+    transition:all .2s ease;
+    text-align:right;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-height:0;
+    overflow:hidden;
     position:relative;
   }
   .choice-btn .choice-letter {
-    width:28px; height:28px; border-radius:9px;
+    width:30px; height:30px; border-radius:9px;
     background:rgba(139,92,246,0.20); border:1px solid rgba(196,132,252,0.35);
     display:flex; align-items:center; justify-content:center;
-    font-size:13px; font-weight:900; flex-shrink:0;
+    font-size:14px; font-weight:900; flex-shrink:0;
     color:var(--violet-light); line-height:1;
+    transition:all .2s ease;
   }
   .choice-btn .choice-text {
     flex:1; overflow:hidden; text-overflow:ellipsis;
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   }
-  .choice-btn:not(:disabled):not(.removed):active {
+
+  /* Enabled + idle */
+  .choice-btn:not(:disabled):not(.dimmed):not(.removed):not(.correct):not(.wrong):active {
     transform:scale(0.98);
     background:rgba(139,92,246,0.12);
   }
-  .choice-btn:disabled:not(.removed):not(.correct):not(.wrong) { cursor:not-allowed; }
 
   /* ✅ الإجابة الصحيحة */
   .choice-btn.correct {
@@ -232,22 +264,36 @@
     box-shadow:0 0 0 2px rgba(34,197,94,0.5), 0 0 24px rgba(34,197,94,0.7);
     transform:scale(1.02);
   }
+  .choice-btn.correct .choice-letter {
+    background:linear-gradient(135deg, var(--green), #15803D);
+    border-color:transparent;
+    color:#fff;
+    box-shadow:0 0 12px rgba(34,197,94,0.7);
+  }
+
   /* ❌ إجابة اللاعب الخاطئة */
   .choice-btn.wrong {
     border-color:var(--red);
-    background:linear-gradient(135deg, rgba(239,68,68,0.25), rgba(239,68,68,0.08));
-    box-shadow:0 0 0 2px rgba(239,68,68,0.4);
+    background:linear-gradient(135deg, rgba(239,68,68,0.30), rgba(239,68,68,0.10));
+    box-shadow:0 0 0 2px rgba(239,68,68,0.5), 0 0 20px rgba(239,68,68,0.55);
   }
-  /* 🚫 خيار محذوف (تم اختياره خطأً من لاعب آخر) */
+  .choice-btn.wrong .choice-letter {
+    background:linear-gradient(135deg, var(--red), #991B1B);
+    border-color:transparent;
+    color:#fff;
+    box-shadow:0 0 12px rgba(239,68,68,0.7);
+  }
+
+  /* 🚫 خيار محذوف (لاعب آخر اختاره خطأً) */
   .choice-btn.removed {
-    opacity:0.35;
+    opacity:0.3;
     text-decoration:line-through;
     text-decoration-color:var(--red);
     text-decoration-thickness:2px;
-    border-color:rgba(239,68,68,0.4);
+    border-color:rgba(239,68,68,0.35);
     background:rgba(239,68,68,0.05);
     cursor:not-allowed;
-    filter:grayscale(0.7);
+    filter:grayscale(0.75);
   }
   .choice-btn.removed .choice-letter {
     background:rgba(239,68,68,0.2);
@@ -255,45 +301,24 @@
     color:#FCA5A5;
   }
 
-  /* 🔒 شاشة اللاعب المجمّد */
-  .frozen-overlay {
-    position:fixed; inset:0; z-index:150;
-    background:rgba(9,9,11,0.72);
-    backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
-    display:none; align-items:center; justify-content:center;
-    padding:24px;
-    animation:fadeIn .3s ease;
+  /* 🔒 خيار مُعطَّل عند اللاعب المجمّد (بدون تغيير في اللون) */
+  .choice-btn.dimmed {
+    opacity:0.5;
+    pointer-events:none;
+    cursor:not-allowed;
   }
-  .frozen-overlay.show { display:flex; }
-  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
-  .frozen-card {
-    background:linear-gradient(160deg, rgba(120,20,50,0.9), rgba(9,9,11,0.9));
-    border:2px solid rgba(239,68,68,0.6);
-    border-radius:22px;
-    padding:28px 22px;
-    max-width:340px;
-    text-align:center;
-    box-shadow:0 0 40px rgba(239,68,68,0.45);
-  }
-  .frozen-icon { font-size:56px; margin-bottom:8px; line-height:1; }
-  .frozen-title {
-    font-size:22px; font-weight:900; color:#FCA5A5;
-    text-shadow:0 0 14px rgba(239,68,68,0.7);
-    margin-bottom:6px;
-  }
-  .frozen-msg { font-size:13px; color:#FECDD3; line-height:1.7; font-weight:700; }
 
   /* ============ Live scores ============ */
   .live-scores {
     display:flex; gap:6px; overflow-x:auto; scrollbar-width:none;
-    flex-shrink:0; padding-bottom:2px; min-height:34px;
+    flex-shrink:0; padding-bottom:2px; min-height:36px;
   }
   .live-scores::-webkit-scrollbar { display:none; }
   .score-chip {
-    display:flex; align-items:center; gap:5px; padding:5px 10px;
+    display:flex; align-items:center; gap:5px; padding:6px 11px;
     background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10);
     border-radius:20px; font-size:11px; font-weight:800; flex-shrink:0;
-    line-height:1.3; transition:all .2s ease;
+    line-height:1.3; transition:all .25s ease;
   }
   .score-chip.me {
     border-color:var(--pink);
@@ -302,18 +327,18 @@
   }
   .score-chip.locked {
     border-color:var(--red);
-    background:linear-gradient(90deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05));
-    box-shadow:0 0 8px rgba(239,68,68,0.3);
-    opacity:0.7;
+    background:linear-gradient(90deg, rgba(239,68,68,0.18), rgba(239,68,68,0.05));
+    box-shadow:0 0 10px rgba(239,68,68,0.35);
   }
   .score-chip.winner {
     border-color:var(--green);
     background:linear-gradient(90deg, rgba(34,197,94,0.25), rgba(34,197,94,0.08));
     box-shadow:0 0 12px rgba(34,197,94,0.5);
+    transform:scale(1.05);
   }
   .score-chip .sc-avatar { font-size:13px; line-height:1; }
   .score-chip .sc-score { color:var(--gold); font-weight:900; font-size:13px; }
-  .score-chip .sc-state { font-size:11px; }
+  .score-chip .sc-state { font-size:11px; line-height:1; }
 
   /* ============ Results ============ */
   .results-wrap {
@@ -360,6 +385,7 @@
   }
   .result-info { display:flex; align-items:center; gap:10px; min-width:0; flex:1; }
   .result-rank { font-size:20px; font-weight:900; min-width:28px; text-align:center; line-height:1; }
+  .result-avatar { font-size:22px; line-height:1; }
   .result-name {
     font-size:14px; font-weight:800; overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap;
@@ -369,35 +395,13 @@
     text-shadow:0 0 10px rgba(251,191,36,0.5); flex-shrink:0;
   }
 
-  /* ============ Toast ============ */
-  .toast-host {
-    position:fixed; top:calc(var(--safe-top) + 12px); left:50%;
-    transform:translateX(-50%); z-index:500; pointer-events:none;
-    display:flex; flex-direction:column; gap:8px; align-items:center; max-width:90vw;
-  }
-  .toast {
-    background:rgba(120,20,50,0.95); border:1.5px solid var(--red);
-    color:#FECDD3; padding:9px 18px; border-radius:12px;
-    font-size:12px; font-weight:800; box-shadow:0 0 22px rgba(239,68,68,0.55);
-    animation:toastIn .25s ease, toastOut .35s ease 2.5s forwards;
-    text-align:center; line-height:1.5; max-width:340px;
-  }
-  .toast.success {
-    background:rgba(20,80,40,0.95); border-color:var(--green);
-    color:#BBF7D0; box-shadow:0 0 22px rgba(34,197,94,0.55);
-  }
-  .toast.info {
-    background:rgba(139,92,246,0.95); border-color:var(--violet-light);
-    color:#EDE9FE; box-shadow:0 0 22px rgba(139,92,246,0.55);
-  }
-  @keyframes toastIn { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes toastOut { to { opacity:0; } }
-
+  /* ============ Utilities ============ */
   .hidden { display:none !important; }
   .flex-col { display:flex; flex-direction:column; }
   .gap-8 { gap:8px; }
   .spacer { flex:1; min-height:4px; }
 
+  /* ============ Responsive tweaks ============ */
   @media (max-height:700px) {
     .brand-logo { width:46px; height:46px; font-size:22px; min-width:46px; }
     .brand-title { font-size:22px; }
@@ -407,28 +411,30 @@
     .inp { padding:11px 14px; font-size:14px; }
     .btn { padding:12px !important; font-size:14px !important; }
     .room-code-value { font-size:34px; letter-spacing:8px; }
-    .question-card { font-size:15px; min-height:80px; padding:14px 12px; }
+    .question-card { font-size:15px; min-height:90px; max-height:120px; padding:14px 12px; }
     .choice-btn { padding:10px 12px; font-size:13px; }
+    .choice-btn .choice-letter { width:26px; height:26px; font-size:12px; }
     .trophy { font-size:50px; }
     .results-title { font-size:19px; }
   }
-  @media (min-width:520px) and (min-height:620px) {
-    .choices-grid { grid-template-columns:1fr 1fr; }
+  @media (max-height:600px) {
+    .brand-logo { width:38px; height:38px; font-size:18px; min-width:38px; }
+    .brand-title { font-size:18px; }
+    .tagline { display:none; }
+    .question-card { font-size:14px; min-height:80px; max-height:100px; padding:12px 10px; }
+    .choice-btn { font-size:12.5px; padding:9px 11px; }
+    .choice-btn .choice-letter { width:24px; height:24px; font-size:11px; }
+  }
+  /* Wide desktop: choices in 2x2 */
+  @media (min-width:600px) and (min-height:620px) {
+    .choices-grid {
+      grid-template-columns:1fr 1fr;
+      grid-template-rows:repeat(2, 1fr);
+    }
   }
 </style>
 </head>
 <body>
-
-<div class="toast-host" id="toastHost"></div>
-
-<!-- ═══════════ Frozen Overlay ═══════════ -->
-<div id="frozenOverlay" class="frozen-overlay">
-  <div class="frozen-card">
-    <div class="frozen-icon">🧊</div>
-    <div class="frozen-title">أنت مُجمّد هذا السؤال</div>
-    <div class="frozen-msg">لقد اخترت إجابة خاطئة.<br>انتظر باقي اللاعبين ليكملوا السؤال.</div>
-  </div>
-</div>
 
 <!-- ═══════════ HOME ═══════════ -->
 <div id="screen-home" class="screen active">
@@ -485,16 +491,16 @@
     <div id="hostControls" class="flex-col gap-8">
       <div class="section-title" style="margin-bottom:2px;">اختر القسم</div>
       <div class="cat-grid">
-        <button class="cat-btn" type="button" data-category="football" data-cat="football">
+        <button class="cat-btn" type="button" data-category="football">
           <span class="cat-icon">⚽</span><span class="cat-name">كرة القدم</span>
         </button>
-        <button class="cat-btn" type="button" data-category="general" data-cat="general">
+        <button class="cat-btn" type="button" data-category="general">
           <span class="cat-icon">🧠</span><span class="cat-name">معلومات عامة</span>
         </button>
-        <button class="cat-btn" type="button" data-category="anime" data-cat="anime">
+        <button class="cat-btn" type="button" data-category="anime">
           <span class="cat-icon">🎌</span><span class="cat-name">أنمي</span>
         </button>
-        <button class="cat-btn" type="button" data-category="islamic" data-cat="islamic">
+        <button class="cat-btn" type="button" data-category="islamic">
           <span class="cat-icon">🕌</span><span class="cat-name">إسلاميات</span>
         </button>
       </div>
@@ -559,32 +565,12 @@
 // قائمة الأقسام
 // ═══════════════════════════════════════════════════
 const ALLOWED_CATEGORIES = new Set(['football', 'general', 'anime', 'islamic']);
-const AR_TO_EN = {
-  'كرة القدم': 'football', 'كرة قدم': 'football', 'كوره': 'football', 'كورة': 'football',
-  'معلومات عامة': 'general', 'معلومات عامه': 'general', 'معلومات': 'general',
-  'أنمي': 'anime', 'انمي': 'anime', 'أنيمي': 'anime', 'انيمي': 'anime',
-  'إسلاميات': 'islamic', 'اسلاميات': 'islamic', 'إسلامي': 'islamic', 'اسلامي': 'islamic'
-};
 function safeCategory(raw) {
   if (raw == null) return null;
-  const t = String(raw).trim();
-  if (ALLOWED_CATEGORIES.has(t.toLowerCase())) return t.toLowerCase();
-  if (AR_TO_EN[t]) return AR_TO_EN[t];
+  const t = String(raw).trim().toLowerCase();
+  if (ALLOWED_CATEGORIES.has(t)) return t;
   return null;
 }
-
-// ═══════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════
-const state = {
-  myName: '', myAvatar: '🎮', roomCode: '', isHost: false,
-  players: [], category: null, mySocketId: null,
-  myLocked: false,               // هل أنا مجمّد هذا السؤال؟
-  targetScore: 10,
-  currentChoices: [],
-  currentCorrectIndex: null,
-  removedChoices: new Set()
-};
 
 const CATEGORY_META = {
   football: { icon: '⚽', name: 'كرة القدم' },
@@ -593,38 +579,35 @@ const CATEGORY_META = {
   islamic:  { icon: '🕌', name: 'إسلاميات' }
 };
 
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+const state = {
+  myName: '', myAvatar: '🎮', roomCode: '', isHost: false,
+  players: [], category: null, mySocketId: null,
+  myLocked: false,               // هل أنا مجمّد هذا السؤال؟
+  myWrongChoice: -1,             // فهرس الخيار الذي أخطأت فيه
+  targetScore: 10,
+  removedChoices: new Set()
+};
+
 const $ = id => document.getElementById(id);
 const socket = io();
 
 // ═══════════════════════════════════════════════════
-// TOAST
+// SCREENS
 // ═══════════════════════════════════════════════════
-function toast(msg, type = 'error') {
-  const host = $('toastHost');
-  const el = document.createElement('div');
-  el.className = 'toast' + (type === 'success' ? ' success' : type === 'info' ? ' info' : '');
-  el.textContent = msg;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 2900);
-}
-
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $('screen-' + name).classList.add('active');
 }
 
 // ═══════════════════════════════════════════════════
-// FROZEN OVERLAY
-// ═══════════════════════════════════════════════════
-function showFrozen() { $('frozenOverlay').classList.add('show'); }
-function hideFrozen() { $('frozenOverlay').classList.remove('show'); }
-
-// ═══════════════════════════════════════════════════
 // CREATE / JOIN
 // ═══════════════════════════════════════════════════
 $('btnCreateRoom').addEventListener('click', () => {
   const name = $('inputName').value.trim();
-  if (!name) return toast('اكتب اسمك أولاً!');
+  if (!name) return;   // بدون رسالة
   state.myName = name;
   socket.emit('create_room', { name, avatar: state.myAvatar });
 });
@@ -632,14 +615,13 @@ $('btnCreateRoom').addEventListener('click', () => {
 $('btnJoinRoom').addEventListener('click', () => {
   const name = $('inputName').value.trim();
   const code = $('inputRoomCode').value.trim();
-  if (!name) return toast('اكتب اسمك أولاً!');
-  if (!/^\d{4}$/.test(code)) return toast('الكود 4 أرقام!');
+  if (!name || !/^\d{4}$/.test(code)) return;   // بدون رسالة
   state.myName = name;
   socket.emit('join_room', { code, name, avatar: state.myAvatar });
 });
 
 // ═══════════════════════════════════════════════════
-// SOCKET EVENTS
+// SOCKET
 // ═══════════════════════════════════════════════════
 socket.on('connect', () => { state.mySocketId = socket.id; });
 
@@ -647,19 +629,27 @@ socket.on('room_created', ({ code }) => {
   state.roomCode = code; state.isHost = true;
   $('displayRoomCode').textContent = code;
   showScreen('lobby');
-  toast('✅ تم إنشاء الغرفة', 'success');
 });
 
 socket.on('room_joined', ({ code }) => {
   state.roomCode = code; state.isHost = false;
   $('displayRoomCode').textContent = code;
   showScreen('lobby');
-  toast('✅ انضممت للغرفة', 'success');
 });
 
-socket.on('error_msg', ({ msg }) => { console.error('❌', msg); toast(msg); });
-socket.on('host_changed', ({ name }) => { state.isHost = false; toast(`👑 المضيف: ${name}`, 'success'); });
-socket.on('player_left', ({ name }) => toast(`🚪 ${name} غادر`));
+socket.on('error_msg', ({ msg }) => {
+  // ⚠️ لا نعرض أي رسالة — فقط نطبع في الـ console
+  console.warn('⚠️', msg);
+});
+
+socket.on('host_changed', ({ name }) => {
+  state.isHost = false;
+  console.log(`👑 المضيف الجديد: ${name}`);
+});
+
+socket.on('player_left', ({ name }) => {
+  console.log(`🚪 غادر: ${name}`);
+});
 
 // ═══════════════════════════════════════════════════
 // ROOM UPDATE
@@ -671,7 +661,6 @@ socket.on('room_update', (data) => {
   state.targetScore = data.targetScore || 10;
   $('targetScoreDisplay').textContent = state.targetScore;
 
-  // تحديث الـ live scores فوراً لو إحنا في اللعب
   if (data.state === 'playing' || data.state === 'reveal') {
     renderLiveScores(data.players);
   }
@@ -749,9 +738,8 @@ function renderLobby(data) {
 document.querySelectorAll('.cat-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     if (!state.isHost) return;
-    const raw = btn.dataset.category || btn.dataset.cat || '';
-    const cat = safeCategory(raw);
-    if (!cat) return toast(`قسم غير صالح: ${raw}`);
+    const cat = safeCategory(btn.dataset.category);
+    if (!cat) return;
     socket.emit('select_category', { category: cat });
   });
 });
@@ -759,7 +747,7 @@ document.querySelectorAll('.cat-btn').forEach(btn => {
 $('btnStartGame').addEventListener('click', () => socket.emit('start_game'));
 $('btnCopyCode').addEventListener('click', () => {
   if (!state.roomCode) return;
-  navigator.clipboard.writeText(state.roomCode).then(() => toast('✅ تم النسخ', 'success'));
+  navigator.clipboard.writeText(state.roomCode).catch(() => {});
 });
 
 // ═══════════════════════════════════════════════════
@@ -768,36 +756,30 @@ $('btnCopyCode').addEventListener('click', () => {
 socket.on('game_started', ({ targetScore }) => {
   state.targetScore = targetScore || 10;
   state.myLocked = false;
+  state.myWrongChoice = -1;
   $('targetScoreDisplay').textContent = state.targetScore;
   showScreen('game');
-  hideFrozen();
   $('qCounter').textContent = 'سؤال 1';
 });
 
 // ═══════════════════════════════════════════════════
-// NEW QUESTION
+// NEW QUESTION — انتقال نظيف، بدون رسائل
 // ═══════════════════════════════════════════════════
 socket.on('new_question', ({ index, question, choices, targetScore, players }) => {
-  state.currentChoices = choices;
   state.removedChoices = new Set();
   state.myLocked = false;
-  state.currentCorrectIndex = null;
+  state.myWrongChoice = -1;
   if (targetScore) state.targetScore = targetScore;
 
-  hideFrozen();
   $('qCounter').textContent = `سؤال ${index + 1}`;
   $('questionCard').textContent = question;
   $('targetScoreDisplay').textContent = state.targetScore;
 
-  // تحديث اللاعبين
   if (players) {
-    state.players = players.map(p => ({
-      ...p,
-      locked: false
-    }));
+    state.players = players.map(p => ({ ...p, locked: false }));
   }
 
-  // بناء الخيارات
+  // بناء الخيارات من جديد — نظيفة تماماً
   const grid = $('choicesGrid');
   grid.innerHTML = '';
   const letters = ['أ', 'ب', 'ج', 'د'];
@@ -806,7 +788,7 @@ socket.on('new_question', ({ index, question, choices, targetScore, players }) =
     btn.className = 'choice-btn';
     btn.dataset.idx = i;
     btn.innerHTML = `<span class="choice-letter">${letters[i]}</span><span class="choice-text">${escapeHtml(ch)}</span>`;
-    btn.addEventListener('click', () => submitAnswer(i, btn));
+    btn.addEventListener('click', () => submitAnswer(i));
     grid.appendChild(btn);
   });
 
@@ -816,32 +798,24 @@ socket.on('new_question', ({ index, question, choices, targetScore, players }) =
 // ═══════════════════════════════════════════════════
 // SUBMIT ANSWER
 // ═══════════════════════════════════════════════════
-function submitAnswer(choiceIndex, btn) {
+function submitAnswer(choiceIndex) {
   if (state.myLocked) return;
-  const btnEl = btn;
-  // تعطيل اللاعب مؤقتاً حتى يأتي تأكيد من السيرفر
-  btnEl.disabled = true;
-  btnEl.classList.add('pending');
+
+  // تعطيل كل الأزرار مؤقتاً لمنع الإرسال المتعدد
+  document.querySelectorAll('.choice-btn').forEach(b => { b.disabled = true; });
   socket.emit('submit_answer', { choiceIndex });
 }
 
 // ═══════════════════════════════════════════════════
-// ✅ إجابة صحيحة — نقطة + نهاية فورية للسؤال
+// ✅ إجابة صحيحة
 // ═══════════════════════════════════════════════════
-socket.on('answer_correct', ({ winnerName, winnerSocketId, correctIndex, scores }) => {
-  state.currentCorrectIndex = correctIndex;
-  hideFrozen();
-
-  // تعطيل كل الأزرار + إبراز الصحيحة
+socket.on('answer_correct', ({ correctIndex, scores }) => {
+  // إبراز الخيار الصحيح
   document.querySelectorAll('.choice-btn').forEach((b, i) => {
     b.disabled = true;
-    b.classList.remove('pending');
-    if (i === correctIndex) {
-      b.classList.add('correct');
-    }
+    if (i === correctIndex) b.classList.add('correct');
   });
 
-  // تحديث النقاط
   if (scores) {
     state.players = scores.map(s => ({
       ...s,
@@ -849,25 +823,15 @@ socket.on('answer_correct', ({ winnerName, winnerSocketId, correctIndex, scores 
     }));
     renderLiveScores(state.players);
   }
-
-  // إشعار
-  if (winnerSocketId === state.mySocketId) {
-    toast(`🎉 إجابة صحيحة! +1`, 'success');
-  } else {
-    toast(`✅ ${winnerName} أجاب صح! +1`, 'success');
-  }
-
-  // الانتقال للسؤال التالي يحدث تلقائياً من السيرفر بعد ~1.5 ثانية
+  // الانتقال للسؤال التالي يحدث تلقائياً من السيرفر
 });
 
 // ═══════════════════════════════════════════════════
-// ❌ إجابة خاطئة — تجميد اللاعب + حذف الخيار للجميع
+// ❌ إجابة خاطئة — تصميم "التجميد" الجديد (بدون Overlay)
 // ═══════════════════════════════════════════════════
-socket.on('answer_wrong', ({ playerName, playerSocketId, choiceIndex, removedChoices, lockedPlayers, scores }) => {
-  // 1) حدّث قائمة الخيارات المحذوفة
+socket.on('answer_wrong', ({ playerSocketId, choiceIndex, removedChoices, lockedPlayers, scores }) => {
   state.removedChoices = new Set(removedChoices || []);
 
-  // 2) حدّث حالة اللاعبين
   if (scores) {
     state.players = scores.map(s => ({
       ...s,
@@ -875,35 +839,35 @@ socket.on('answer_wrong', ({ playerName, playerSocketId, choiceIndex, removedCho
     }));
   }
 
-  // 3) هل أنا اللاعب الذي أخطأ؟
   const iAmTheWrongPlayer = (playerSocketId === state.mySocketId);
 
   if (iAmTheWrongPlayer) {
-    // أنا المجمّد — أعرض التجميد
+    // أنا المُخطئ — تجميد بصري نظيف:
+    // 1) خياري الخاطئ → أحمر
+    // 2) باقي الأزرار → opacity 0.5 + pointer-events: none (بدون تغيير لون)
+    // 3) بدون أي overlay أو رسالة
     state.myLocked = true;
-    showFrozen();
-    // أبرز زرّي الذي اخترته بالأحمر
+    state.myWrongChoice = choiceIndex;
+
     document.querySelectorAll('.choice-btn').forEach((b, i) => {
       b.disabled = true;
       if (i === choiceIndex) {
         b.classList.add('wrong');
-        b.classList.remove('pending');
+      } else if (!b.classList.contains('correct') && !b.classList.contains('removed')) {
+        b.classList.add('dimmed');
       }
     });
-    toast(`❌ إجابة خاطئة! أنت مُجمّد هذا السؤال`, 'error');
   } else {
-    // لست أنا — فقط أزيل الخيار المختار خطأً
+    // لست أنا — أُبرز فقط الخيار المختار خطأً من اللاعب الآخر
     document.querySelectorAll('.choice-btn').forEach((b, i) => {
       if ((removedChoices || []).includes(i)) {
         b.classList.add('removed');
         b.disabled = true;
-        b.classList.remove('pending');
-      } else if (!state.myLocked && !b.classList.contains('correct')) {
-        // أبقيه مفعّلاً إذا لم أكن مجمّداً
+      } else if (!state.myLocked && !b.classList.contains('correct') && !b.classList.contains('wrong')) {
+        // أبقيه مفعّلاً إذا لم أكن مجمداً
         b.disabled = false;
       }
     });
-    toast(`❌ ${playerName} أخطأ — الخيار محذوف`, 'info');
   }
 
   renderLiveScores(state.players);
@@ -912,15 +876,12 @@ socket.on('answer_wrong', ({ playerName, playerSocketId, choiceIndex, removedCho
 // ═══════════════════════════════════════════════════
 // كشف الإجابة (عند تجميد الجميع)
 // ═══════════════════════════════════════════════════
-socket.on('round_revealed', ({ correctIndex, correctAnswer, noWinner }) => {
-  // إظهار الإجابة الصحيحة للجميع
+socket.on('round_revealed', ({ correctIndex }) => {
   document.querySelectorAll('.choice-btn').forEach((b, i) => {
     b.disabled = true;
+    b.classList.remove('dimmed');
     if (i === correctIndex) b.classList.add('correct');
   });
-  if (noWinner) {
-    toast('⌛ انتهى السؤال — لم يُجب أحد', 'info');
-  }
 });
 
 // ═══════════════════════════════════════════════════
@@ -936,12 +897,12 @@ function renderLiveScores(players) {
     chip.className = 'score-chip';
     if (p.name === state.myName) chip.classList.add('me');
     if (p.locked) chip.classList.add('locked');
-    const stateIcon = p.locked ? '🧊' : '';
+    const lockIcon = p.locked ? '🧊' : '';
     chip.innerHTML = `
       <span class="sc-avatar">${escapeHtml(p.avatar || '🎮')}</span>
       <span>${escapeHtml(p.name)}</span>
       <span class="sc-score">${p.score || 0}</span>
-      ${stateIcon ? `<span class="sc-state">${stateIcon}</span>` : ''}
+      ${lockIcon ? `<span class="sc-state">${lockIcon}</span>` : ''}
     `;
     container.appendChild(chip);
   });
@@ -951,7 +912,6 @@ function renderLiveScores(players) {
 // GAME OVER
 // ═══════════════════════════════════════════════════
 socket.on('game_over', ({ winnerName, reason, rankings }) => {
-  hideFrozen();
   showScreen('results');
   $('winnerNameDisplay').textContent = winnerName ? `🏅 ${winnerName}` : '';
   $('gameOverReason').textContent = reason || '';
@@ -966,7 +926,7 @@ socket.on('game_over', ({ winnerName, reason, rankings }) => {
     row.innerHTML = `
       <div class="result-info">
         <span class="result-rank">${medals[i] || '#' + p.rank}</span>
-        <span class="result-avatar" style="font-size:22px;">${escapeHtml(p.avatar || '🎮')}</span>
+        <span class="result-avatar">${escapeHtml(p.avatar || '🎮')}</span>
         <span class="result-name">${escapeHtml(p.name)}</span>
       </div>
       <span class="result-score">${p.score}</span>
@@ -981,12 +941,11 @@ $('btnPlayAgain').addEventListener('click', () => socket.emit('play_again'));
 
 socket.on('room_reset', () => {
   state.myLocked = false;
+  state.myWrongChoice = -1;
   state.category = null;
   state.removedChoices = new Set();
-  hideFrozen();
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
   showScreen('lobby');
-  toast('🔄 لعبة جديدة جاهزة!', 'success');
 });
 
 // ═══════════════════════════════════════════════════
