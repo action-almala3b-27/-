@@ -26,17 +26,19 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const PRIMARY_KEY = process.env.OPENROUTER_KEY
   || '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';
 
-// قائمة المفاتيح (مفتاح واحد حالياً — لو ضفت مفتاح جديد بعدين، ضيفه بفاصلة)
+// قائمة المفاتيح
 const OPENROUTER_KEYS = (process.env.OPENROUTER_KEYS || PRIMARY_KEY)
   .split(',').map(k => k.trim()).filter(Boolean);
 
-// ⚡ نماذج مجانية فقط — بالترتيب من الأسرع للأبطأ
+// ⚡ النماذج المجانية — محدّثة
 const FREE_MODELS = [
+  'google/gemma-4-26b-a4b-it:free',
+  'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3-super:free',
   'google/gemini-2.0-flash-exp:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'deepseek/deepseek-chat-v3-0324:free',
-  'google/gemma-2-9b-it:free',
-  'qwen/qwen-2.5-72b-instruct:free'
+  'google/gemma-2-9b-it:free'
 ];
 
 const QUESTIONS_TARGET = 40;
@@ -197,7 +199,7 @@ async function trySingleRequest(model, apiKey, prompt, signal) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// توليد من الـ API — مع fallback على كل النماذج والمفاتيح
+// توليد من الـ API — مع تخطي ذكي للأخطاء
 // ═══════════════════════════════════════════════════════════
 async function generateQuestionsFromAPI(categoryKey) {
   const meta = Object.values(CATEGORY_DISPLAY).find(m => m.key === categoryKey);
@@ -225,6 +227,14 @@ async function generateQuestionsFromAPI(categoryKey) {
       } catch (err) {
         clearTimeout(timer);
         lastError = err;
+        const status = err && err.status;
+
+        // تخطي فوري — بدون طباعة تحذير
+        if (status === 404) continue;
+        if (status === 429) continue;
+        if (status === 401 || status === 403) continue;
+        if (status === 402) continue;
+
         console.warn(`⚠️ [${model}]: ${err.message}`);
       }
     }
@@ -710,7 +720,6 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🎯 ع السريع — المنفذ ${PORT}`);
-  console.log(`🤖 النماذج: ${FREE_MODELS.join(', ')}`);
-  console.log(`🔑 عدد المفاتيح: ${OPENROUTER_KEYS.length}`);
+  console.log(`🤖 عدد النماذج: ${FREE_MODELS.length}`);
   console.log(`📊 الأسئلة لكل قسم: ${QUESTIONS_TARGET}\n`);
 });
