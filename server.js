@@ -1,11 +1,10 @@
 // ═══════════════════════════════════════════════════════════
-// ع السريع — سيرفر Socket.io مع OpenRouter API
-// الاعتماد الكامل على الـ API — لا أسئلة مدمجة
+// ع السريع — سيرفر مع تحميل مسبق تلقائي لكل الأقسام
+// الاعتماد الكامل على الـ API — بدون أي أسئلة مدمجة
 // ═══════════════════════════════════════════════════════════
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 const { Server } = require('socket.io');
 
@@ -26,9 +25,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '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';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
 
-const QUESTIONS_TARGET = 20;
-const QUESTIONS_MIN_ACCEPT = 12;
-const API_TIMEOUT_MS = 30000;   // 30 ثانية كحد أقصى
+const QUESTIONS_TARGET = 40;         // ← 40 سؤال لكل قسم
+const QUESTIONS_MIN_ACCEPT = 25;     // الحد الأدنى المقبول
+const API_TIMEOUT_MS = 60000;        // 60 ثانية
 
 const CATEGORY_DESCRIPTIONS = {
   football: 'كرة القدم: كأس العالم، دوري أبطال أوروبا، اللاعبون التاريخيون، الأندية الكبرى، المدربون، الانتقالات الشهيرة، الأرقام القياسية، الشعارات، التشكيلات، البطولات المحلية والقارية.',
@@ -37,10 +36,15 @@ const CATEGORY_DESCRIPTIONS = {
   islamic:  'الإسلاميات: القرآن الكريم، التفسير، السيرة النبوية، الصحابة الكرام، الفقه، الأنبياء والرسل، الغزوات، الحديث الشريف، الأئمة، الفتوحات، الحضارة الإسلامية.'
 };
 
-// كاش — لتفادي تكرار الطلب في نفس الجلسة
+// ═══════════════════════════════════════════════════════════
+// 🌐 الكاش العالمي + الوعود الجارية
+// ═══════════════════════════════════════════════════════════
 const QUESTIONS_CACHE = {};
-const CACHE_AGE_MS = 4 * 60 * 60 * 1000;   // 4 ساعات
 const CACHE_TIMESTAMPS = {};
+const PREFETCH_PROMISES = {};
+const CACHE_AGE_MS = 4 * 60 * 60 * 1000;   // 4 ساعات
+
+const ALL_CATEGORY_KEYS = ['football', 'general', 'anime', 'islamic'];
 
 // ═══════════════════════════════════════════════════════════
 // خريطة الأقسام
@@ -79,59 +83,7 @@ function normalizeCategory(raw) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// تحميل ملفات JSON المحلية (إن وُجدت — للاستخدام كـ cache أولي فقط)
-// ═══════════════════════════════════════════════════════════
-const QUESTION_BANK = {};
-
-function loadLocalJsonFiles() {
-  console.log('\n═══════════════════════════════════════════');
-  console.log('📚 فحص ملفات JSON المحلية');
-  console.log('═══════════════════════════════════════════');
-
-  UNIQUE_FILES.forEach((filename) => {
-    const fullPath = path.resolve(__dirname, filename);
-
-    if (!fs.existsSync(fullPath)) {
-      QUESTION_BANK[filename] = [];
-      console.log(`   ⚠️  ${filename} → غير موجود`);
-      return;
-    }
-
-    try {
-      let raw = fs.readFileSync(fullPath, 'utf8');
-      if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-      const parsed = JSON.parse(raw);
-
-      if (!Array.isArray(parsed)) {
-        QUESTION_BANK[filename] = [];
-        return;
-      }
-
-      const valid = [];
-      parsed.forEach((q) => {
-        if (!q || typeof q !== 'object') return;
-        const text = q.question ?? q.q;
-        const choices = q.choices ?? q.c;
-        const idx = q.correct_index ?? q.a;
-        if (typeof text !== 'string' || !text.trim()) return;
-        if (!Array.isArray(choices) || choices.length !== 4) return;
-        if (typeof idx !== 'number' || idx < 0 || idx > 3) return;
-        valid.push({ question: text.trim(), choices: choices.map(String), correct_index: idx });
-      });
-
-      QUESTION_BANK[filename] = valid;
-      console.log(`   ✅ ${filename} → ${valid.length} سؤال`);
-    } catch (e) {
-      console.error(`   ❌ ${filename}: ${e.message}`);
-      QUESTION_BANK[filename] = [];
-    }
-  });
-  console.log('');
-}
-loadLocalJsonFiles();
-
-// ═══════════════════════════════════════════════════════════
-// بناء prompt الـ API
+// بناء الـ prompt
 // ═══════════════════════════════════════════════════════════
 function buildQuestionsPrompt(categoryKey, categoryNameAr) {
   const description = CATEGORY_DESCRIPTIONS[categoryKey] || '';
@@ -140,28 +92,29 @@ function buildQuestionsPrompt(categoryKey, categoryNameAr) {
 
 الوصف التفصيلي: ${description}
 
-قواعد الصعوبة (موزّعة عشوائياً):
+قواعد الصعوبة (موزّعة عشوائياً، مخلوطة):
 • 40% سهلة (يعرفها أي شخص)
 • 30% متوسطة (تحتاج متابعة)
 • 20% صعبة (للمتابعين الشغوفين)
 • 10% شبه مستحيلة (تفاصيل نادرة جداً)
 
-الترتيب عشوائي — لا ترتّب حسب الصعوبة.
+الترتيب عشوائي تماماً — لا ترتّب حسب الصعوبة.
 
 شروط إلزامية:
 1. كل سؤال له 4 خيارات، واحد صحيح.
-2. لا تكرر أي سؤال.
+2. لا تكرر أي سؤال داخل القائمة.
 3. معلومات دقيقة وحديثة.
 4. كل النصوص بالعربية الفصحى.
 5. التزم حرفياً بموضوع "${categoryNameAr}".
 6. الخيارات قصيرة (1-5 كلمات).
+7. نوّع المواضيع داخل الباقة قدر الإمكان.
 
 أعد النتيجة بصيغة JSON فقط (بدون أي شرح):
 {"questions":[{"question":"نص السؤال؟","choices":["خيار1","خيار2","خيار3","خيار4"],"correct_index":0}]}`;
 }
 
 // ═══════════════════════════════════════════════════════════
-// توليد الأسئلة من OpenRouter
+// توليد من الـ API
 // ═══════════════════════════════════════════════════════════
 async function generateQuestionsFromAPI(categoryKey) {
   const meta = Object.values(CATEGORY_DISPLAY).find(m => m.key === categoryKey);
@@ -173,7 +126,7 @@ async function generateQuestionsFromAPI(categoryKey) {
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    console.log(`\n🤖 [API] توليد ${QUESTIONS_TARGET} سؤال لقسم "${meta.nameAr}"...`);
+    console.log(`🤖 [API] توليد ${QUESTIONS_TARGET} سؤال لقسم "${meta.nameAr}"...`);
     const startTime = Date.now();
 
     const res = await fetch(OPENROUTER_URL, {
@@ -187,19 +140,19 @@ async function generateQuestionsFromAPI(categoryKey) {
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
         messages: [
-          { role: 'system', content: 'أنت مساعد يلتزم بالتعليمات ويُرجع JSON صالحاً فقط، بدون أي كلام إضافي.' },
+          { role: 'system', content: 'أنت مساعد يلتزم بالتعليمات ويُرجع JSON صالحاً فقط.' },
           { role: 'user', content: prompt }
         ],
         response_format: { type: 'json_object' },
         temperature: 1.0,
-        max_tokens: 8000
+        max_tokens: 16000
       }),
       signal: controller.signal
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`❌ [API] HTTP ${res.status}:`, errText.slice(0, 300));
+      console.error(`❌ [API] HTTP ${res.status}:`, errText.slice(0, 200));
       throw new Error(`HTTP ${res.status}`);
     }
 
@@ -220,12 +173,12 @@ async function generateQuestionsFromAPI(categoryKey) {
     const rawQuestions = parsed.questions || parsed.Questions || [];
 
     const valid = [];
-    const seenQuestions = new Set();
+    const seen = new Set();
 
     rawQuestions.forEach(q => {
       if (!q || typeof q.question !== 'string') return;
       const qText = q.question.trim();
-      if (seenQuestions.has(qText)) return;
+      if (seen.has(qText)) return;
 
       const choices = q.choices || q.options;
       const idx = Number(q.correct_index ?? q.correctIndex ?? q.answer);
@@ -234,16 +187,12 @@ async function generateQuestionsFromAPI(categoryKey) {
       if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
       if (qText.length < 5) return;
 
-      seenQuestions.add(qText);
-      valid.push({
-        question: qText,
-        choices: choices.map(String),
-        correct_index: idx
-      });
+      seen.add(qText);
+      valid.push({ question: qText, choices: choices.map(String), correct_index: idx });
     });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`✅ [API] تم توليد ${valid.length} سؤال في ${elapsed}s`);
+    console.log(`✅ [API] "${meta.nameAr}" → ${valid.length} سؤال في ${elapsed}s`);
 
     if (valid.length < QUESTIONS_MIN_ACCEPT) {
       throw new Error(`عدد قليل (${valid.length} من ${QUESTIONS_MIN_ACCEPT})`);
@@ -256,51 +205,81 @@ async function generateQuestionsFromAPI(categoryKey) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// جلب الأسئلة: كاش → API → ملفات JSON محلية
+// 🚀 التحميل المسبق
+// ═══════════════════════════════════════════════════════════
+function startPrefetch(categoryKey) {
+  const now = Date.now();
+  const cached = QUESTIONS_CACHE[categoryKey];
+  const age = now - (CACHE_TIMESTAMPS[categoryKey] || 0);
+  if (cached && cached.length >= QUESTIONS_MIN_ACCEPT && age < CACHE_AGE_MS) {
+    return Promise.resolve(cached);
+  }
+
+  if (PREFETCH_PROMISES[categoryKey]) {
+    return PREFETCH_PROMISES[categoryKey];
+  }
+
+  const promise = generateQuestionsFromAPI(categoryKey)
+    .then(qs => {
+      QUESTIONS_CACHE[categoryKey] = qs;
+      CACHE_TIMESTAMPS[categoryKey] = Date.now();
+      delete PREFETCH_PROMISES[categoryKey];
+      return qs;
+    })
+    .catch(err => {
+      console.error(`❌ [Prefetch] ${categoryKey}: ${err.message}`);
+      delete PREFETCH_PROMISES[categoryKey];
+      throw err;
+    });
+
+  PREFETCH_PROMISES[categoryKey] = promise;
+  return promise;
+}
+
+function prefetchAllCategories() {
+  console.log('\n🚀 [Prefetch] بدء تحميل الأقسام الأربعة بالتوازي (40 سؤال لكل قسم)...');
+  ALL_CATEGORY_KEYS.forEach(key => {
+    startPrefetch(key).catch(() => {});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// جلب الأسئلة عند الحاجة
 // ═══════════════════════════════════════════════════════════
 async function getQuestionsForCategory(categoryKey) {
   const now = Date.now();
   const cached = QUESTIONS_CACHE[categoryKey];
-  const cacheAge = now - (CACHE_TIMESTAMPS[categoryKey] || 0);
+  const age = now - (CACHE_TIMESTAMPS[categoryKey] || 0);
 
-  // 1) كاش من نفس الجلسة (حديث)
-  if (cached && cached.length >= QUESTIONS_MIN_ACCEPT && cacheAge < CACHE_AGE_MS) {
-    const minAgo = Math.floor(cacheAge / 60000);
-    console.log(`⚡ [CACHE] ${cached.length} سؤال (عمرها ${minAgo} دقيقة)`);
+  if (cached && cached.length >= QUESTIONS_MIN_ACCEPT && age < CACHE_AGE_MS) {
+    const minAgo = Math.floor(age / 60000);
+    console.log(`⚡ [CACHE] ${categoryKey} → ${cached.length} سؤال (عمرها ${minAgo} دقيقة)`);
     return cached;
   }
 
-  // 2) محاولة الـ API
-  try {
-    const questions = await generateQuestionsFromAPI(categoryKey);
-    QUESTIONS_CACHE[categoryKey] = questions;
-    CACHE_TIMESTAMPS[categoryKey] = now;
-    return questions;
-  } catch (err) {
-    console.error(`❌ [API] فشل التوليد: ${err.message}`);
+  if (PREFETCH_PROMISES[categoryKey]) {
+    console.log(`⏳ [Prefetch جارٍ] انتظار "${categoryKey}"...`);
+    try {
+      return await PREFETCH_PROMISES[categoryKey];
+    } catch (e) {
+      console.error(`❌ [Prefetch فشل] ${e.message}`);
+    }
+  }
 
-    // 3) كاش قديم من نفس الجلسة
+  console.log(`🆕 [طلب جديد] "${categoryKey}"...`);
+  try {
+    return await startPrefetch(categoryKey);
+  } catch (e) {
     if (cached && cached.length > 0) {
       console.log(`⚡ [CACHE قديم] ${cached.length} سؤال`);
       return cached;
     }
-
-    // 4) ملفات JSON المحلية (إن وُجدت)
-    const meta = Object.values(CATEGORY_DISPLAY).find(m => m.key === categoryKey);
-    const fallbackFile = meta ? meta.key + '.json' : null;
-    const bank = fallbackFile ? (QUESTION_BANK[fallbackFile] || []) : [];
-    if (bank.length > 0) {
-      console.log(`📁 [JSON محلي] ${bank.length} سؤال من ${fallbackFile}`);
-      return bank;
-    }
-
-    // لا شيء متاح → فشل
-    throw new Error('تعذّر تحضير الأسئلة من الـ API ولا توجد ملفات بديلة');
+    throw new Error('تعذّر توليد الأسئلة من الـ API');
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// أدوات مساعدة
+// أدوات
 // ═══════════════════════════════════════════════════════════
 function shuffleArray(arr) {
   const a = [...arr];
@@ -385,10 +364,11 @@ function broadcastRoom(room) {
 }
 
 function pickNextQuestion(room) {
+  // إذا انتهت الأسئلة — أعد خلطها كلها من جديد
   if (room.questionIndex + 1 >= room.questionPool.length) {
     room.questionPool = shuffleArray(room.questionPool).map(shuffleQuestionChoices);
     room.questionIndex = -1;
-    console.log(`🔁 [${room.code}] إعادة خلط الأسئلة`);
+    console.log(`🔁 [${room.code}] إعادة خلط ${room.questionPool.length} سؤال`);
   }
   room.questionIndex++;
   return room.questionPool[room.questionIndex];
@@ -430,7 +410,7 @@ function endGame(room, winner) {
     rankings: sorted.map((p, i) => ({ rank: i + 1, name: p.name, avatar: p.avatar, score: p.score }))
   });
   broadcastRoom(room);
-  console.log(`🏆 [${room.code}] انتهت اللعبة — الفائز: ${winner ? winner.name : 'لا أحد'}`);
+  console.log(`🏆 [${room.code}] انتهت — الفائز: ${winner ? winner.name : 'لا أحد'}`);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -441,6 +421,9 @@ io.on('connection', (socket) => {
 
   socket.on('create_room', ({ name, avatar }) => {
     if (!name || !name.trim()) return socket.emit('error_msg', { msg: 'اكتب اسمك!' });
+
+    // 🚀 بدء التحميل المسبق لجميع الأقسام فوراً
+    prefetchAllCategories();
 
     const room = createRoom(socket.id);
     room.players.push({
@@ -453,7 +436,7 @@ io.on('connection', (socket) => {
     socket.data.roomCode = room.code;
     socket.emit('room_created', { code: room.code });
     broadcastRoom(room);
-    console.log(`🏠 [${room.code}] "${name.trim()}"`);
+    console.log(`🏠 [${room.code}] "${name.trim()}" — بدأ التحميل المسبق`);
   });
 
   socket.on('join_room', ({ code, name, avatar }) => {
@@ -503,13 +486,14 @@ io.on('connection', (socket) => {
 
     room.category = filename;
     room.categoryKey = CATEGORY_DISPLAY[filename].key;
+
+    // تأكد أن القسم المختار يُحمَّل
+    startPrefetch(room.categoryKey).catch(() => {});
+
     broadcastRoom(room);
     console.log(`🎯 [${room.code}] القسم: ${room.categoryKey}`);
   });
 
-  // ═══════════════════════════════════════════════════════════
-  // 🎬 بدء اللعبة — توليد من الـ API
-  // ═══════════════════════════════════════════════════════════
   socket.on('start_game', async () => {
     const room = rooms[socket.data.roomCode];
     if (!room) return socket.emit('error_msg', { msg: 'الغرفة غير موجودة!' });
@@ -522,16 +506,16 @@ io.on('connection', (socket) => {
     if (room.generating) return;
 
     room.isStarted = true;
-    room.state = 'generating';
     room.generating = true;
 
-    io.to(room.code).emit('generating_questions', {
-      categoryKey: room.categoryKey,
-      categoryMeta: CATEGORY_DISPLAY[room.category]
-    });
-    broadcastRoom(room);
+    const isReady = QUESTIONS_CACHE[room.categoryKey] &&
+                    QUESTIONS_CACHE[room.categoryKey].length >= QUESTIONS_MIN_ACCEPT;
 
-    console.log(`\n⏳ [${room.code}] جاري توليد الأسئلة من الـ API...`);
+    if (isReady) {
+      console.log(`⚡ [${room.code}] الأسئلة جاهزة مسبقاً — بدء فوري`);
+    } else {
+      console.log(`⏳ [${room.code}] انتظار التحميل الجاري...`);
+    }
 
     try {
       const questions = await getQuestionsForCategory(room.categoryKey);
@@ -548,27 +532,26 @@ io.on('connection', (socket) => {
       room.generating = false;
       room.state = 'playing';
 
-      console.log(`✅ [${room.code}] جاهزون — ${room.questionPool.length} سؤال`);
+      console.log(`✅ [${room.code}] جاهزون — ${room.questionPool.length} سؤال في البول`);
 
       io.to(room.code).emit('game_started', {
         category: room.categoryKey,
         categoryMeta: CATEGORY_DISPLAY[room.category],
-        targetScore: CONSTANTS.TARGET_SCORE,
-        questionsReady: true
+        targetScore: CONSTANTS.TARGET_SCORE
       });
       broadcastRoom(room);
 
-      setTimeout(() => sendNextQuestion(room), 300);
+      setTimeout(() => sendNextQuestion(room), 200);
 
     } catch (err) {
-      console.error(`❌ [${room.code}] فشل التوليد:`, err.message);
+      console.error(`❌ [${room.code}] فشل:`, err.message);
 
       room.generating = false;
       room.isStarted = false;
       room.state = 'category';
 
       io.to(room.code).emit('generating_failed', {
-        message: 'تعذّر تحضير الأسئلة من الـ API. حاول مرة أخرى.'
+        message: 'تعذّر تحضير الأسئلة. حاول مرة أخرى.'
       });
       broadcastRoom(room);
     }
@@ -701,9 +684,8 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🎯 ع السريع — المنفذ ${PORT}`);
-  console.log(`🌐 http://localhost:${PORT}`);
   console.log(`🤖 النموذج: ${OPENROUTER_MODEL}`);
-  console.log(`⏱️  مهلة الـ API: ${API_TIMEOUT_MS/1000}s`);
-  console.log(`📊 عدد الأسئلة المطلوب: ${QUESTIONS_TARGET}`);
-  console.log(`🎮 الهدف: ${CONSTANTS.TARGET_SCORE} نقاط\n`);
+  console.log(`🚀 التحميل المسبق: عند إنشاء الغرفة`);
+  console.log(`📊 الأسئلة لكل قسم: ${QUESTIONS_TARGET}`);
+  console.log(`🎯 الهدف: ${CONSTANTS.TARGET_SCORE} نقطة\n`);
 });

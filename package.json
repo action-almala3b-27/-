@@ -1,7 +1,7 @@
 {
   "name": "ala-sareea",
-  "version": "2.2.0",
-  "description": "ع السريع - لعبة أسئلة أونلاين مع OpenRouter API",
+  "version": "3.1.0",
+  "description": "ع السريع - لعبة أسئلة أونلاين مع تحميل مسبق",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -378,65 +378,6 @@
     text-shadow:0 0 10px rgba(251,191,36,0.5); flex-shrink:0;
   }
 
-  /* ═══════════ شاشة توليد الأسئلة ═══════════ */
-  .gen-overlay {
-    position:fixed; inset:0; z-index:9999;
-    display:none; flex-direction:column;
-    align-items:center; justify-content:center; gap:22px;
-    background:
-      radial-gradient(ellipse 60% 40% at 50% 0%, rgba(236,72,153,0.25), transparent 60%),
-      radial-gradient(ellipse 70% 50% at 50% 100%, rgba(139,92,246,0.30), transparent 60%),
-      linear-gradient(180deg, #0c0616, #09090B);
-    padding: 30px; text-align: center;
-  }
-  .gen-overlay.show { display: flex; }
-
-  .gen-spinner {
-    width: 68px; height: 68px; border-radius: 50%;
-    border: 4px solid rgba(196,132,252,0.20);
-    border-top-color: #C084FC;
-    border-right-color: #EC4899;
-    animation: genSpin 0.9s linear infinite;
-    filter: drop-shadow(0 0 18px rgba(236,72,153,0.6));
-  }
-  @keyframes genSpin { to { transform: rotate(360deg); } }
-
-  .gen-cat {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 22px; font-weight: 900;
-    background: linear-gradient(90deg,#FB7185,#EC4899,#C084FC,#8B5CF6);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 14px rgba(236,72,153,0.5));
-  }
-  .gen-cat .icon { font-size: 34px; line-height: 1; }
-
-  .gen-text {
-    font-size: 15px; font-weight: 800; color: #E9D5FF; line-height: 1.6;
-    text-shadow: 0 0 10px rgba(139,92,246,0.5);
-    max-width: 300px;
-  }
-  .gen-sub {
-    font-size: 12px; font-weight: 700; color: #A1A1AA; line-height: 1.7;
-    max-width: 300px;
-  }
-
-  .gen-progress {
-    width: 60%; max-width: 260px; height: 4px;
-    background: rgba(196,132,252,0.15); border-radius: 4px;
-    overflow: hidden; margin-top: 6px;
-  }
-  .gen-progress-bar {
-    height: 100%; width: 0%;
-    background: linear-gradient(90deg, #FB7185, #EC4899, #C084FC, #8B5CF6);
-    animation: genProgress 30s linear forwards;
-    box-shadow: 0 0 12px rgba(236,72,153,0.7);
-  }
-  @keyframes genProgress {
-    from { width: 0%; }
-    to { width: 100%; }
-  }
-
   .hidden { display:none !important; }
   .flex-col { display:flex; flex-direction:column; }
   .gap-8 { gap:8px; }
@@ -599,22 +540,7 @@
   </div>
 </div>
 
-<!-- ═══════════ شاشة توليد الأسئلة ═══════════ -->
-<div id="genOverlay" class="gen-overlay">
-  <div class="gen-spinner"></div>
-  <div class="gen-cat" id="genCatDisplay">
-    <span class="icon">⚡</span>
-    <span id="genCatName">جاري التحضير...</span>
-  </div>
-  <div class="gen-text">جاري تحضير الأسئلة من الذكاء الاصطناعي</div>
-  <div class="gen-sub">قد تستغرق العملية من 10 إلى 30 ثانية</div>
-  <div class="gen-progress"><div class="gen-progress-bar" id="genProgressBar"></div></div>
-</div>
-
 <script>
-// ═══════════════════════════════════════════════════
-// قائمة الأقسام
-// ═══════════════════════════════════════════════════
 const ALLOWED_CATEGORIES = new Set(['football', 'general', 'anime', 'islamic']);
 function safeCategory(raw) {
   if (raw == null) return null;
@@ -630,9 +556,6 @@ const CATEGORY_META = {
   islamic:  { icon: '🕌', name: 'إسلاميات' }
 };
 
-// ═══════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════
 const state = {
   myName: '', myAvatar: '🎮', roomCode: '', isHost: false,
   players: [], category: null, mySocketId: null,
@@ -645,17 +568,11 @@ const state = {
 const $ = id => document.getElementById(id);
 const socket = io();
 
-// ═══════════════════════════════════════════════════
-// SCREENS
-// ═══════════════════════════════════════════════════
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $('screen-' + name).classList.add('active');
 }
 
-// ═══════════════════════════════════════════════════
-// CREATE / JOIN
-// ═══════════════════════════════════════════════════
 $('btnCreateRoom').addEventListener('click', () => {
   const name = $('inputName').value.trim();
   if (!name) return;
@@ -671,9 +588,6 @@ $('btnJoinRoom').addEventListener('click', () => {
   socket.emit('join_room', { code, name, avatar: state.myAvatar });
 });
 
-// ═══════════════════════════════════════════════════
-// SOCKET
-// ═══════════════════════════════════════════════════
 socket.on('connect', () => { state.mySocketId = socket.id; });
 
 socket.on('room_created', ({ code }) => {
@@ -688,22 +602,10 @@ socket.on('room_joined', ({ code }) => {
   showScreen('lobby');
 });
 
-socket.on('error_msg', ({ msg }) => {
-  console.warn('⚠️', msg);
-});
+socket.on('error_msg', ({ msg }) => { console.warn('⚠️', msg); });
+socket.on('host_changed', ({ name }) => { state.isHost = false; });
+socket.on('player_left', ({ name }) => { console.log(`🚪 غادر: ${name}`); });
 
-socket.on('host_changed', ({ name }) => {
-  state.isHost = false;
-  console.log(`👑 المضيف الجديد: ${name}`);
-});
-
-socket.on('player_left', ({ name }) => {
-  console.log(`🚪 غادر: ${name}`);
-});
-
-// ═══════════════════════════════════════════════════
-// ROOM UPDATE
-// ═══════════════════════════════════════════════════
 socket.on('room_update', (data) => {
   state.players = data.players;
   state.category = data.category;
@@ -782,9 +684,6 @@ function renderLobby(data) {
   }
 }
 
-// ═══════════════════════════════════════════════════
-// HOST: category selection
-// ═══════════════════════════════════════════════════
 document.querySelectorAll('.cat-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     if (!state.isHost) return;
@@ -800,62 +699,7 @@ $('btnCopyCode').addEventListener('click', () => {
   navigator.clipboard.writeText(state.roomCode).catch(() => {});
 });
 
-// ═══════════════════════════════════════════════════
-// ⏱️ إدارة شاشة التوليد مع timeout
-// ═══════════════════════════════════════════════════
-let genTimeoutId = null;
-const GEN_TIMEOUT_MS = 35000;   // 35 ثانية كحد أقصى
-
-function startGenTimeout() {
-  clearTimeout(genTimeoutId);
-  // إعادة تشغيل شريط التقدم
-  const bar = $('genProgressBar');
-  bar.style.animation = 'none';
-  void bar.offsetWidth;
-  bar.style.animation = 'genProgress 35s linear forwards';
-
-  genTimeoutId = setTimeout(() => {
-    $('genOverlay').classList.remove('show');
-    console.warn('⚠️ انتهت مهلة التوليد');
-  }, GEN_TIMEOUT_MS);
-}
-
-function stopGenTimeout() {
-  clearTimeout(genTimeoutId);
-  genTimeoutId = null;
-}
-
-// ═══════════════════════════════════════════════════
-// شاشة توليد الأسئلة
-// ═══════════════════════════════════════════════════
-socket.on('generating_questions', ({ categoryMeta }) => {
-  const overlay = $('genOverlay');
-  const iconEl = $('genCatDisplay').querySelector('.icon');
-  const nameEl = $('genCatName');
-
-  if (categoryMeta) {
-    iconEl.textContent = categoryMeta.icon || '⚡';
-    nameEl.textContent = categoryMeta.nameAr || 'جاري التحضير...';
-  } else {
-    iconEl.textContent = '⚡';
-    nameEl.textContent = 'جاري التحضير...';
-  }
-  overlay.classList.add('show');
-  startGenTimeout();
-});
-
-socket.on('generating_failed', ({ message }) => {
-  stopGenTimeout();
-  $('genOverlay').classList.remove('show');
-  console.warn('⚠️', message);
-});
-
-// ═══════════════════════════════════════════════════
-// GAME START
-// ═══════════════════════════════════════════════════
 socket.on('game_started', ({ targetScore }) => {
-  stopGenTimeout();
-  $('genOverlay').classList.remove('show');
   state.targetScore = targetScore || 10;
   state.myLocked = false;
   state.myWrongChoice = -1;
@@ -864,9 +708,10 @@ socket.on('game_started', ({ targetScore }) => {
   $('qCounter').textContent = 'سؤال 1';
 });
 
-// ═══════════════════════════════════════════════════
-// NEW QUESTION
-// ═══════════════════════════════════════════════════
+socket.on('generating_failed', ({ message }) => {
+  console.warn('⚠️', message);
+});
+
 socket.on('new_question', ({ index, question, choices, targetScore, players }) => {
   state.removedChoices = new Set();
   state.myLocked = false;
@@ -896,18 +741,12 @@ socket.on('new_question', ({ index, question, choices, targetScore, players }) =
   renderLiveScores(state.players);
 });
 
-// ═══════════════════════════════════════════════════
-// SUBMIT ANSWER
-// ═══════════════════════════════════════════════════
 function submitAnswer(choiceIndex) {
   if (state.myLocked) return;
   document.querySelectorAll('.choice-btn').forEach(b => { b.disabled = true; });
   socket.emit('submit_answer', { choiceIndex });
 }
 
-// ═══════════════════════════════════════════════════
-// ANSWER CORRECT
-// ═══════════════════════════════════════════════════
 socket.on('answer_correct', ({ correctIndex, scores }) => {
   document.querySelectorAll('.choice-btn').forEach((b, i) => {
     b.disabled = true;
@@ -923,9 +762,6 @@ socket.on('answer_correct', ({ correctIndex, scores }) => {
   }
 });
 
-// ═══════════════════════════════════════════════════
-// ANSWER WRONG
-// ═══════════════════════════════════════════════════
 socket.on('answer_wrong', ({ playerSocketId, choiceIndex, removedChoices, lockedPlayers, scores }) => {
   state.removedChoices = new Set(removedChoices || []);
 
@@ -941,7 +777,6 @@ socket.on('answer_wrong', ({ playerSocketId, choiceIndex, removedChoices, locked
   if (iAmTheWrongPlayer) {
     state.myLocked = true;
     state.myWrongChoice = choiceIndex;
-
     document.querySelectorAll('.choice-btn').forEach((b, i) => {
       b.disabled = true;
       if (i === choiceIndex) {
@@ -964,9 +799,6 @@ socket.on('answer_wrong', ({ playerSocketId, choiceIndex, removedChoices, locked
   renderLiveScores(state.players);
 });
 
-// ═══════════════════════════════════════════════════
-// ROUND REVEALED
-// ═══════════════════════════════════════════════════
 socket.on('round_revealed', ({ correctIndex }) => {
   document.querySelectorAll('.choice-btn').forEach((b, i) => {
     b.disabled = true;
@@ -975,9 +807,6 @@ socket.on('round_revealed', ({ correctIndex }) => {
   });
 });
 
-// ═══════════════════════════════════════════════════
-// LIVE SCORES
-// ═══════════════════════════════════════════════════
 function renderLiveScores(players) {
   const container = $('liveScores');
   container.innerHTML = '';
@@ -999,9 +828,6 @@ function renderLiveScores(players) {
   });
 }
 
-// ═══════════════════════════════════════════════════
-// GAME OVER
-// ═══════════════════════════════════════════════════
 socket.on('game_over', ({ winnerName, reason, rankings }) => {
   showScreen('results');
   $('winnerNameDisplay').textContent = winnerName ? `🏅 ${winnerName}` : '';
@@ -1031,19 +857,14 @@ socket.on('game_over', ({ winnerName, reason, rankings }) => {
 $('btnPlayAgain').addEventListener('click', () => socket.emit('play_again'));
 
 socket.on('room_reset', () => {
-  stopGenTimeout();
   state.myLocked = false;
   state.myWrongChoice = -1;
   state.category = null;
   state.removedChoices = new Set();
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
-  $('genOverlay').classList.remove('show');
   showScreen('lobby');
 });
 
-// ═══════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
