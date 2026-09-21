@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ع السريع — سيرفر مع تحميل مسبق + نماذج مجانية متعددة
+// ع السريع — سيرفر مع تحميل مسبق + Groq API (مجاني)
 // ═══════════════════════════════════════════════════════════
 const express = require('express');
 const http = require('http');
@@ -18,27 +18,20 @@ const io = new Server(server, {
 });
 
 // ═══════════════════════════════════════════════════════════
-// 🔑 OpenRouter API
+// 🔑 Groq API — 14,400 طلب مجاني يومياً
 // ═══════════════════════════════════════════════════════════
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-// المفتاح الأساسي (من Environment Variable أو مباشر)
-const PRIMARY_KEY = process.env.OPENROUTER_KEY
-  || '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';
+// المفتاح (من Environment Variable أو مباشر)
+const GROQ_KEY = process.env.GROQ_KEY
+  || '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';
 
-// قائمة المفاتيح
-const OPENROUTER_KEYS = (process.env.OPENROUTER_KEYS || PRIMARY_KEY)
-  .split(',').map(k => k.trim()).filter(Boolean);
-
-// ⚡ النماذج المجانية — محدّثة
-const FREE_MODELS = [
-  'google/gemma-4-26b-a4b-it:free',
-  'google/gemma-4-31b-it:free',
-  'nvidia/nemotron-3-super:free',
-  'google/gemini-2.0-flash-exp:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'deepseek/deepseek-chat-v3-0324:free',
-  'google/gemma-2-9b-it:free'
+// ⚡ نماذج Groq المجانية — بالترتيب من الأقوى للأسرع
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',       // الأفضل للأسئلة العربية
+  'llama-3.1-8b-instant',          // الأسرع (14,400 طلب/يوم)
+  'mixtral-8x7b-32768',            // بديل قوي
+  'gemma2-9b-it'                   // احتياطي
 ];
 
 const QUESTIONS_TARGET = 40;
@@ -99,7 +92,7 @@ function normalizeCategory(raw) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// بناء الـ prompt
+// بناء الـ prompt (يجب أن يحتوي على كلمة JSON للنمط المنظم)
 // ═══════════════════════════════════════════════════════════
 function buildQuestionsPrompt(categoryKey, categoryNameAr) {
   const description = CATEGORY_DESCRIPTIONS[categoryKey] || '';
@@ -122,7 +115,7 @@ function buildQuestionsPrompt(categoryKey, categoryNameAr) {
 5. التزم حرفياً بموضوع "${categoryNameAr}".
 6. الخيارات قصيرة (1-5 كلمات).
 
-أعد JSON فقط بهذه الصيغة:
+يجب أن تكون الإجابة بصيغة JSON فقط بهذه البنية:
 {"questions":[{"question":"نص السؤال؟","choices":["خيار1","خيار2","خيار3","خيار4"],"correct_index":0}]}`;
 }
 
@@ -130,13 +123,11 @@ function buildQuestionsPrompt(categoryKey, categoryNameAr) {
 // محاولة واحدة بنموذج معين
 // ═══════════════════════════════════════════════════════════
 async function trySingleRequest(model, apiKey, prompt, signal) {
-  const res = await fetch(OPENROUTER_URL, {
+  const res = await fetch(GROQ_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + apiKey,
-      'HTTP-Referer': 'https://sahragames.local',
-      'X-Title': 'Ala Sareea'
+      'Authorization': 'Bearer ' + apiKey
     },
     body: JSON.stringify({
       model: model,
@@ -208,35 +199,33 @@ async function generateQuestionsFromAPI(categoryKey) {
   const prompt = buildQuestionsPrompt(categoryKey, meta.nameAr);
   let lastError = null;
 
-  for (const apiKey of OPENROUTER_KEYS) {
-    for (const model of FREE_MODELS) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  for (const model of GROQ_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-      try {
-        const startTime = Date.now();
-        console.log(`🤖 [${model}] قسم "${meta.nameAr}"...`);
+    try {
+      const startTime = Date.now();
+      console.log(`🤖 [${model}] قسم "${meta.nameAr}"...`);
 
-        const questions = await trySingleRequest(model, apiKey, prompt, controller.signal);
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      const questions = await trySingleRequest(model, GROQ_KEY, prompt, controller.signal);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        console.log(`✅ [${model}] ${questions.length} سؤال في ${elapsed}s`);
-        clearTimeout(timer);
-        return questions;
+      console.log(`✅ [${model}] ${questions.length} سؤال في ${elapsed}s`);
+      clearTimeout(timer);
+      return questions;
 
-      } catch (err) {
-        clearTimeout(timer);
-        lastError = err;
-        const status = err && err.status;
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+      const status = err && err.status;
 
-        // تخطي فوري — بدون طباعة تحذير
-        if (status === 404) continue;
-        if (status === 429) continue;
-        if (status === 401 || status === 403) continue;
-        if (status === 402) continue;
+      // تخطي فوري — بدون طباعة تحذير
+      if (status === 404) continue;
+      if (status === 429) continue;
+      if (status === 401 || status === 403) continue;
+      if (status === 400) continue;
 
-        console.warn(`⚠️ [${model}]: ${err.message}`);
-      }
+      console.warn(`⚠️ [${model}]: ${err.message}`);
     }
   }
 
@@ -720,6 +709,7 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🎯 ع السريع — المنفذ ${PORT}`);
-  console.log(`🤖 عدد النماذج: ${FREE_MODELS.length}`);
-  console.log(`📊 الأسئلة لكل قسم: ${QUESTIONS_TARGET}\n`);
+  console.log(`🤖 Groq API — ${GROQ_MODELS.length} نماذج`);
+  console.log(`📊 الأسئلة لكل قسم: ${QUESTIONS_TARGET}`);
+  console.log(`🚀 الحد المجاني: 14,400 طلب/يوم\n`);
 });
