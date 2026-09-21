@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 // ع السريع — سيرفر Socket.io مع OpenRouter API
+// الاعتماد الكامل على الـ API — لا أسئلة مدمجة
 // ═══════════════════════════════════════════════════════════
 const express = require('express');
 const http = require('http');
@@ -22,12 +23,12 @@ const io = new Server(server, {
 // 🔑 OpenRouter API
 // ═══════════════════════════════════════════════════════════
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_KEY = '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';
-const OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet';
+const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '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';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
 
-const QUESTIONS_TARGET = 40;
-const QUESTIONS_MIN_ACCEPT = 25;
-const API_TIMEOUT_MS = 120000;
+const QUESTIONS_TARGET = 20;
+const QUESTIONS_MIN_ACCEPT = 12;
+const API_TIMEOUT_MS = 30000;   // 30 ثانية كحد أقصى
 
 const CATEGORY_DESCRIPTIONS = {
   football: 'كرة القدم: كأس العالم، دوري أبطال أوروبا، اللاعبون التاريخيون، الأندية الكبرى، المدربون، الانتقالات الشهيرة، الأرقام القياسية، الشعارات، التشكيلات، البطولات المحلية والقارية.',
@@ -36,8 +37,9 @@ const CATEGORY_DESCRIPTIONS = {
   islamic:  'الإسلاميات: القرآن الكريم، التفسير، السيرة النبوية، الصحابة الكرام، الفقه، الأنبياء والرسل، الغزوات، الحديث الشريف، الأئمة، الفتوحات، الحضارة الإسلامية.'
 };
 
+// كاش — لتفادي تكرار الطلب في نفس الجلسة
 const QUESTIONS_CACHE = {};
-const CACHE_AGE_MS = 6 * 60 * 60 * 1000;
+const CACHE_AGE_MS = 4 * 60 * 60 * 1000;   // 4 ساعات
 const CACHE_TIMESTAMPS = {};
 
 // ═══════════════════════════════════════════════════════════
@@ -77,13 +79,13 @@ function normalizeCategory(raw) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// تحميل الأسئلة الاحتياطية من الملفات
+// تحميل ملفات JSON المحلية (إن وُجدت — للاستخدام كـ cache أولي فقط)
 // ═══════════════════════════════════════════════════════════
 const QUESTION_BANK = {};
 
-function loadFallbackQuestions() {
+function loadLocalJsonFiles() {
   console.log('\n═══════════════════════════════════════════');
-  console.log('📚 تحميل الأسئلة الاحتياطية');
+  console.log('📚 فحص ملفات JSON المحلية');
   console.log('═══════════════════════════════════════════');
 
   UNIQUE_FILES.forEach((filename) => {
@@ -118,7 +120,7 @@ function loadFallbackQuestions() {
       });
 
       QUESTION_BANK[filename] = valid;
-      console.log(`   ${valid.length > 0 ? '✅' : '⚠️ '} ${filename} → ${valid.length} سؤال`);
+      console.log(`   ✅ ${filename} → ${valid.length} سؤال`);
     } catch (e) {
       console.error(`   ❌ ${filename}: ${e.message}`);
       QUESTION_BANK[filename] = [];
@@ -126,7 +128,7 @@ function loadFallbackQuestions() {
   });
   console.log('');
 }
-loadFallbackQuestions();
+loadLocalJsonFiles();
 
 // ═══════════════════════════════════════════════════════════
 // بناء prompt الـ API
@@ -134,37 +136,28 @@ loadFallbackQuestions();
 function buildQuestionsPrompt(categoryKey, categoryNameAr) {
   const description = CATEGORY_DESCRIPTIONS[categoryKey] || '';
 
-  return `أنت خبير أسئلة مسابقات عربية محترف. أعد ${QUESTIONS_TARGET} سؤال اختيار من متعدد في موضوع "${categoryNameAr}".
+  return `أنت خبير أسئلة مسابقات عربية. أعد ${QUESTIONS_TARGET} سؤال اختيار من متعدد في موضوع "${categoryNameAr}".
 
-الوصف التفصيلي للموضوع: ${description}
+الوصف التفصيلي: ${description}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-قواعد الصعوبة (موزّعة عشوائياً داخل المصفوفة):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• 40% أسئلة سهلة (سؤال مباشر، يعرفه أي شخص)
-• 30% أسئلة متوسطة (يحتاج تفكير أو معلومة معروفة)
-• 20% أسئلة صعبة (لا يجيبها إلا المتابع الشغوف)
-• 10% أسئلة شبه مستحيلة (تفاصيل نادرة جداً)
+قواعد الصعوبة (موزّعة عشوائياً):
+• 40% سهلة (يعرفها أي شخص)
+• 30% متوسطة (تحتاج متابعة)
+• 20% صعبة (للمتابعين الشغوفين)
+• 10% شبه مستحيلة (تفاصيل نادرة جداً)
 
-⚠️ الترتيب عشوائي تماماً — لا ترتّب حسب الصعوبة. اخلط السهل والصعب معاً.
+الترتيب عشوائي — لا ترتّب حسب الصعوبة.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 شروط إلزامية:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. كل سؤال له 4 خيارات فقط، واحد صحيح.
+1. كل سؤال له 4 خيارات، واحد صحيح.
 2. لا تكرر أي سؤال.
-3. المعلومات دقيقة وحديثة قدر الإمكان.
+3. معلومات دقيقة وحديثة.
 4. كل النصوص بالعربية الفصحى.
-5. التزم حرفياً بموضوع "${categoryNameAr}" — لا تخرج عن المجال.
-6. الخيارات قصيرة (كلمة إلى 5 كلمات).
-7. تجنّب الأسئلة المبهمة أو التي لها أكثر من إجابة صحيحة.
+5. التزم حرفياً بموضوع "${categoryNameAr}".
+6. الخيارات قصيرة (1-5 كلمات).
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-الصيغة المطلوبة (JSON فقط، بدون أي شرح):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{"questions":[{"question":"نص السؤال؟","choices":["خيار1","خيار2","خيار3","خيار4"],"correct_index":0}]}
-
-correct_index: رقم من 0 إلى 3 يشير إلى الخيار الصحيح.`;
+أعد النتيجة بصيغة JSON فقط (بدون أي شرح):
+{"questions":[{"question":"نص السؤال؟","choices":["خيار1","خيار2","خيار3","خيار4"],"correct_index":0}]}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -172,7 +165,7 @@ correct_index: رقم من 0 إلى 3 يشير إلى الخيار الصحيح.
 // ═══════════════════════════════════════════════════════════
 async function generateQuestionsFromAPI(categoryKey) {
   const meta = Object.values(CATEGORY_DISPLAY).find(m => m.key === categoryKey);
-  if (!meta) throw new Error('قسم غير معروف: ' + categoryKey);
+  if (!meta) throw new Error('قسم غير معروف');
 
   const prompt = buildQuestionsPrompt(categoryKey, meta.nameAr);
 
@@ -180,7 +173,7 @@ async function generateQuestionsFromAPI(categoryKey) {
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    console.log(`\n🤖 [API] جاري توليد ${QUESTIONS_TARGET} سؤال لقسم "${meta.nameAr}"...`);
+    console.log(`\n🤖 [API] توليد ${QUESTIONS_TARGET} سؤال لقسم "${meta.nameAr}"...`);
     const startTime = Date.now();
 
     const res = await fetch(OPENROUTER_URL, {
@@ -194,22 +187,19 @@ async function generateQuestionsFromAPI(categoryKey) {
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
         messages: [
-          {
-            role: 'system',
-            content: 'أنت مساعد خبير بالمسابقات العربية. تُرجع JSON صالحاً فقط، بدون أي كلام إضافي قبل أو بعد.'
-          },
+          { role: 'system', content: 'أنت مساعد يلتزم بالتعليمات ويُرجع JSON صالحاً فقط، بدون أي كلام إضافي.' },
           { role: 'user', content: prompt }
         ],
         response_format: { type: 'json_object' },
         temperature: 1.0,
-        max_tokens: 16000
+        max_tokens: 8000
       }),
       signal: controller.signal
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error(`❌ [API] HTTP ${res.status}:`, errText.slice(0, 400));
+      console.error(`❌ [API] HTTP ${res.status}:`, errText.slice(0, 300));
       throw new Error(`HTTP ${res.status}`);
     }
 
@@ -253,33 +243,34 @@ async function generateQuestionsFromAPI(categoryKey) {
     });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`✅ [API] تم توليد ${valid.length} سؤال صالح في ${elapsed}s`);
+    console.log(`✅ [API] تم توليد ${valid.length} سؤال في ${elapsed}s`);
 
     if (valid.length < QUESTIONS_MIN_ACCEPT) {
-      throw new Error(`عدد الأسئلة قليل جداً (${valid.length})`);
+      throw new Error(`عدد قليل (${valid.length} من ${QUESTIONS_MIN_ACCEPT})`);
     }
 
     return valid;
-
   } finally {
     clearTimeout(timer);
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// جلب الأسئلة: كاش → API → fallback JSON
+// جلب الأسئلة: كاش → API → ملفات JSON محلية
 // ═══════════════════════════════════════════════════════════
 async function getQuestionsForCategory(categoryKey) {
   const now = Date.now();
   const cached = QUESTIONS_CACHE[categoryKey];
   const cacheAge = now - (CACHE_TIMESTAMPS[categoryKey] || 0);
 
+  // 1) كاش من نفس الجلسة (حديث)
   if (cached && cached.length >= QUESTIONS_MIN_ACCEPT && cacheAge < CACHE_AGE_MS) {
-    const minutesAgo = Math.floor(cacheAge / 60000);
-    console.log(`⚡ [CACHE] استخدام ${cached.length} سؤال لقسم "${categoryKey}" (عمرها ${minutesAgo} دقيقة)`);
+    const minAgo = Math.floor(cacheAge / 60000);
+    console.log(`⚡ [CACHE] ${cached.length} سؤال (عمرها ${minAgo} دقيقة)`);
     return cached;
   }
 
+  // 2) محاولة الـ API
   try {
     const questions = await generateQuestionsFromAPI(categoryKey);
     QUESTIONS_CACHE[categoryKey] = questions;
@@ -288,21 +279,23 @@ async function getQuestionsForCategory(categoryKey) {
   } catch (err) {
     console.error(`❌ [API] فشل التوليد: ${err.message}`);
 
+    // 3) كاش قديم من نفس الجلسة
     if (cached && cached.length > 0) {
-      console.log(`⚡ [CACHE قديم] استخدام ${cached.length} سؤال`);
+      console.log(`⚡ [CACHE قديم] ${cached.length} سؤال`);
       return cached;
     }
 
+    // 4) ملفات JSON المحلية (إن وُجدت)
     const meta = Object.values(CATEGORY_DISPLAY).find(m => m.key === categoryKey);
     const fallbackFile = meta ? meta.key + '.json' : null;
     const bank = fallbackFile ? (QUESTION_BANK[fallbackFile] || []) : [];
-
     if (bank.length > 0) {
-      console.log(`📁 [Fallback] استخدام ${bank.length} سؤال من الملف`);
+      console.log(`📁 [JSON محلي] ${bank.length} سؤال من ${fallbackFile}`);
       return bank;
     }
 
-    throw new Error('لا توجد أسئلة متاحة لهذا القسم');
+    // لا شيء متاح → فشل
+    throw new Error('تعذّر تحضير الأسئلة من الـ API ولا توجد ملفات بديلة');
   }
 }
 
@@ -346,22 +339,6 @@ function normalizeRoomCode(raw) {
   return String(raw).trim().replace(/\s+/g, '');
 }
 
-function logOpenRooms(context) {
-  const codes = Object.keys(rooms);
-  console.log('\n📋 ───── الغرف المفتوحة ─────');
-  if (codes.length === 0) {
-    console.log('   (لا توجد غرف)');
-  } else {
-    codes.forEach((code) => {
-      const r = rooms[code];
-      const players = r.players.map(p => p.name).join(', ') || '(فارغة)';
-      console.log(`   🏠 ${code} | ${r.state} | ${r.players.length}/4: ${players}`);
-    });
-  }
-  if (context) console.log(`   📌 ${context}`);
-  console.log('   ─────────────────────────\n');
-}
-
 const CONSTANTS = {
   TARGET_SCORE: 10,
   MAX_PLAYERS: 4,
@@ -374,21 +351,13 @@ const JOINABLE_STATES = new Set(['lobby', 'category']);
 function createRoom(hostSocketId) {
   const code = generateRoomCode();
   const room = {
-    code,
-    hostId: hostSocketId,
-    players: [],
-    isStarted: false,
-    state: 'lobby',
-    category: null,
-    categoryKey: null,
-    questionPool: [],
-    questionIndex: -1,
-    currentQuestion: null,
-    removedChoices: new Set(),
-    lastCorrectIndex: null,
-    roundWinner: null,
-    advanceTimer: null,
-    generating: false
+    code, hostId: hostSocketId, players: [],
+    isStarted: false, state: 'lobby',
+    category: null, categoryKey: null,
+    questionPool: [], questionIndex: -1,
+    currentQuestion: null, removedChoices: new Set(),
+    lastCorrectIndex: null, roundWinner: null,
+    advanceTimer: null, generating: false
   };
   rooms[code] = room;
   return room;
@@ -397,18 +366,12 @@ function createRoom(hostSocketId) {
 function getPublicRoom(room) {
   const meta = room.category ? CATEGORY_DISPLAY[room.category] : null;
   return {
-    code: room.code,
-    hostId: room.hostId,
-    state: room.state,
-    isStarted: room.isStarted,
-    category: room.categoryKey,
-    categoryMeta: meta,
+    code: room.code, hostId: room.hostId,
+    state: room.state, isStarted: room.isStarted,
+    category: room.categoryKey, categoryMeta: meta,
     players: room.players.map(p => ({
-      name: p.name,
-      avatar: p.avatar,
-      score: p.score,
-      locked: p.lockedThisRound,
-      connected: p.connected
+      name: p.name, avatar: p.avatar, score: p.score,
+      locked: p.lockedThisRound, connected: p.connected
     })),
     targetScore: CONSTANTS.TARGET_SCORE,
     questionNumber: room.questionIndex + 1,
@@ -421,9 +384,6 @@ function broadcastRoom(room) {
   io.to(room.code).emit('room_update', getPublicRoom(room));
 }
 
-// ═══════════════════════════════════════════════════════════
-// منطق الأسئلة
-// ═══════════════════════════════════════════════════════════
 function pickNextQuestion(room) {
   if (room.questionIndex + 1 >= room.questionPool.length) {
     room.questionPool = shuffleArray(room.questionPool).map(shuffleQuestionChoices);
@@ -451,10 +411,8 @@ function sendNextQuestion(room) {
   room.state = 'playing';
 
   io.to(room.code).emit('new_question', {
-    index: room.questionIndex,
-    question: q.question,
-    choices: q.choices,
-    targetScore: CONSTANTS.TARGET_SCORE,
+    index: room.questionIndex, question: q.question,
+    choices: q.choices, targetScore: CONSTANTS.TARGET_SCORE,
     players: room.players.map(p => ({ name: p.name, avatar: p.avatar, score: p.score, locked: false }))
   });
   broadcastRoom(room);
@@ -469,9 +427,7 @@ function endGame(room, winner) {
   io.to(room.code).emit('game_over', {
     winnerName: winner ? winner.name : null,
     reason: winner ? `${winner.name} وصل إلى ${CONSTANTS.TARGET_SCORE} نقاط` : 'انتهت الأسئلة',
-    rankings: sorted.map((p, i) => ({
-      rank: i + 1, name: p.name, avatar: p.avatar, score: p.score
-    }))
+    rankings: sorted.map((p, i) => ({ rank: i + 1, name: p.name, avatar: p.avatar, score: p.score }))
   });
   broadcastRoom(room);
   console.log(`🏆 [${room.code}] انتهت اللعبة — الفائز: ${winner ? winner.name : 'لا أحد'}`);
@@ -481,93 +437,61 @@ function endGame(room, winner) {
 // Socket.io
 // ═══════════════════════════════════════════════════════════
 io.on('connection', (socket) => {
-  console.log(`\n🔌 اتصال: ${socket.id}`);
+  console.log(`🔌 اتصال: ${socket.id}`);
 
-  // ─────────────────────────────────────────
-  // إنشاء غرفة
-  // ─────────────────────────────────────────
   socket.on('create_room', ({ name, avatar }) => {
-    if (!name || !name.trim()) {
-      return socket.emit('error_msg', { msg: 'اكتب اسمك أولاً!' });
-    }
+    if (!name || !name.trim()) return socket.emit('error_msg', { msg: 'اكتب اسمك!' });
 
     const room = createRoom(socket.id);
     room.players.push({
-      socketId: socket.id,
-      name: name.trim().slice(0, 15),
-      avatar: avatar || '🎮',
-      score: 0,
-      lockedThisRound: false,
-      connected: true
+      socketId: socket.id, name: name.trim().slice(0, 15),
+      avatar: avatar || '🎮', score: 0,
+      lockedThisRound: false, connected: true
     });
 
     socket.join(room.code);
     socket.data.roomCode = room.code;
-
-    console.log(`🏠 [${room.code}] غرفة جديدة بواسطة "${name.trim()}"`);
     socket.emit('room_created', { code: room.code });
     broadcastRoom(room);
-    logOpenRooms('بعد الإنشاء');
+    console.log(`🏠 [${room.code}] "${name.trim()}"`);
   });
 
-  // ─────────────────────────────────────────
-  // الانضمام
-  // ─────────────────────────────────────────
   socket.on('join_room', ({ code, name, avatar }) => {
-    if (!name || !name.trim()) {
-      return socket.emit('error_msg', { msg: 'اكتب اسمك!' });
-    }
+    if (!name || !name.trim()) return socket.emit('error_msg', { msg: 'اكتب اسمك!' });
 
     const roomCode = normalizeRoomCode(code);
-    if (!roomCode) {
-      return socket.emit('error_msg', { msg: 'اكتب كود الغرفة!' });
-    }
-
     const room = rooms[roomCode];
-    if (!room) {
-      return socket.emit('error_msg', { msg: `الغرفة "${roomCode}" غير موجودة!` });
-    }
-
+    if (!room) return socket.emit('error_msg', { msg: 'الغرفة غير موجودة!' });
     if (room.isStarted || !JOINABLE_STATES.has(room.state)) {
-      return socket.emit('error_msg', { msg: 'اللعبة بدأت بالفعل!' });
+      return socket.emit('error_msg', { msg: 'اللعبة بدأت!' });
     }
-
     if (room.players.length >= CONSTANTS.MAX_PLAYERS) {
       return socket.emit('error_msg', { msg: 'الغرفة ممتلئة!' });
     }
 
     const cleanName = name.trim().slice(0, 15);
     if (room.players.some(p => p.name === cleanName)) {
-      return socket.emit('error_msg', { msg: 'هذا الاسم مستخدم!' });
+      return socket.emit('error_msg', { msg: 'الاسم مستخدم!' });
     }
 
     room.players.push({
-      socketId: socket.id,
-      name: cleanName,
-      avatar: avatar || '🎮',
-      score: 0,
-      lockedThisRound: false,
-      connected: true
+      socketId: socket.id, name: cleanName,
+      avatar: avatar || '🎮', score: 0,
+      lockedThisRound: false, connected: true
     });
 
     socket.join(room.code);
     socket.data.roomCode = room.code;
-
-    console.log(`✅ [${room.code}] "${cleanName}" انضم (${room.players.length}/4)`);
     socket.emit('room_joined', { code: room.code });
     broadcastRoom(room);
+    console.log(`✅ [${room.code}] "${cleanName}" انضم`);
   });
 
-  // ─────────────────────────────────────────
-  // اختيار القسم
-  // ─────────────────────────────────────────
   socket.on('select_category', ({ category }) => {
     const room = rooms[socket.data.roomCode];
     if (!room) return socket.emit('error_msg', { msg: 'الغرفة غير موجودة!' });
     if (room.hostId !== socket.id) return socket.emit('error_msg', { msg: 'فقط المضيف!' });
-    if (room.isStarted || !JOINABLE_STATES.has(room.state)) {
-      return socket.emit('error_msg', { msg: 'لا يمكن التغيير بعد البدء!' });
-    }
+    if (room.isStarted || !JOINABLE_STATES.has(room.state)) return;
 
     const normalized = normalizeCategory(category);
     let filename = CATEGORY_MAP[normalized];
@@ -575,33 +499,28 @@ io.on('connection', (socket) => {
       const guess = `${normalized}.json`;
       if (UNIQUE_FILES.includes(guess)) filename = guess;
     }
-
-    if (!filename) {
-      return socket.emit('error_msg', { msg: `قسم غير معروف: "${category}"` });
-    }
+    if (!filename) return socket.emit('error_msg', { msg: `قسم غير معروف: "${category}"` });
 
     room.category = filename;
     room.categoryKey = CATEGORY_DISPLAY[filename].key;
-
-    console.log(`🎯 [${room.code}] القسم: ${room.categoryKey}`);
     broadcastRoom(room);
+    console.log(`🎯 [${room.code}] القسم: ${room.categoryKey}`);
   });
 
-  // ─────────────────────────────────────────
-  // بدء اللعبة — توليد الأسئلة
-  // ─────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // 🎬 بدء اللعبة — توليد من الـ API
+  // ═══════════════════════════════════════════════════════════
   socket.on('start_game', async () => {
     const room = rooms[socket.data.roomCode];
     if (!room) return socket.emit('error_msg', { msg: 'الغرفة غير موجودة!' });
     if (room.hostId !== socket.id) return socket.emit('error_msg', { msg: 'فقط المضيف!' });
-    if (room.isStarted) return socket.emit('error_msg', { msg: 'اللعبة بدأت بالفعل!' });
+    if (room.isStarted) return socket.emit('error_msg', { msg: 'بدأت بالفعل!' });
     if (room.players.length < CONSTANTS.MIN_PLAYERS) {
-      return socket.emit('error_msg', { msg: `محتاج ${CONSTANTS.MIN_PLAYERS} لاعبين على الأقل!` });
+      return socket.emit('error_msg', { msg: 'محتاج لاعبين على الأقل!' });
     }
-    if (!room.category) return socket.emit('error_msg', { msg: 'اختر القسم أولاً!' });
+    if (!room.category) return socket.emit('error_msg', { msg: 'اختر القسم!' });
     if (room.generating) return;
 
-    // نقفل الغرفة أثناء التوليد
     room.isStarted = true;
     room.state = 'generating';
     room.generating = true;
@@ -612,7 +531,7 @@ io.on('connection', (socket) => {
     });
     broadcastRoom(room);
 
-    console.log(`\n⏳ [${room.code}] جاري توليد الأسئلة...`);
+    console.log(`\n⏳ [${room.code}] جاري توليد الأسئلة من الـ API...`);
 
     try {
       const questions = await getQuestionsForCategory(room.categoryKey);
@@ -639,7 +558,7 @@ io.on('connection', (socket) => {
       });
       broadcastRoom(room);
 
-      setTimeout(() => sendNextQuestion(room), 400);
+      setTimeout(() => sendNextQuestion(room), 300);
 
     } catch (err) {
       console.error(`❌ [${room.code}] فشل التوليد:`, err.message);
@@ -649,23 +568,19 @@ io.on('connection', (socket) => {
       room.state = 'category';
 
       io.to(room.code).emit('generating_failed', {
-        message: 'تعذّر توليد الأسئلة. حاول مرة أخرى.'
+        message: 'تعذّر تحضير الأسئلة من الـ API. حاول مرة أخرى.'
       });
       broadcastRoom(room);
     }
   });
 
-  // ─────────────────────────────────────────
-  // تقديم إجابة
-  // ─────────────────────────────────────────
   socket.on('submit_answer', ({ choiceIndex }) => {
     const room = rooms[socket.data.roomCode];
     if (!room || room.state !== 'playing' || !room.currentQuestion) return;
     if (typeof choiceIndex !== 'number' || choiceIndex < 0 || choiceIndex > 3) return;
 
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player) return;
-    if (player.lockedThisRound) return;
+    if (!player || player.lockedThisRound) return;
     if (room.removedChoices.has(choiceIndex)) return;
 
     const isCorrect = (choiceIndex === room.currentQuestion.correct_index);
@@ -677,11 +592,8 @@ io.on('connection', (socket) => {
       room.roundWinner = player.name;
       room.state = 'reveal';
 
-      console.log(`✅ [${room.code}] ${player.name} +1 (${player.score})`);
-
       io.to(room.code).emit('answer_correct', {
-        winnerName: player.name,
-        winnerSocketId: player.socketId,
+        winnerName: player.name, winnerSocketId: player.socketId,
         correctIndex: choiceIndex,
         scores: room.players.map(p => ({ name: p.name, avatar: p.avatar, score: p.score }))
       });
@@ -700,13 +612,9 @@ io.on('connection', (socket) => {
       player.lockedThisRound = true;
       room.removedChoices.add(choiceIndex);
 
-      console.log(`❌ [${room.code}] ${player.name} أخطأ — الخيار ${choiceIndex}`);
-
       io.to(room.code).emit('answer_wrong', {
-        playerName: player.name,
-        playerSocketId: player.socketId,
-        choiceIndex,
-        removedChoices: Array.from(room.removedChoices),
+        playerName: player.name, playerSocketId: player.socketId,
+        choiceIndex, removedChoices: Array.from(room.removedChoices),
         lockedPlayers: room.players.filter(p => p.lockedThisRound).map(p => p.name),
         scores: room.players.map(p => ({ name: p.name, avatar: p.avatar, score: p.score }))
       });
@@ -729,13 +637,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ─────────────────────────────────────────
-  // إعادة اللعب
-  // ─────────────────────────────────────────
   socket.on('play_again', () => {
     const room = rooms[socket.data.roomCode];
-    if (!room) return;
-    if (room.hostId !== socket.id) return socket.emit('error_msg', { msg: 'فقط المضيف!' });
+    if (!room || room.hostId !== socket.id) return;
     clearTimeout(room.advanceTimer);
 
     room.state = 'lobby';
@@ -754,9 +658,6 @@ io.on('connection', (socket) => {
     console.log(`🔄 [${room.code}] إعادة اللعب`);
   });
 
-  // ─────────────────────────────────────────
-  // خروج
-  // ─────────────────────────────────────────
   socket.on('disconnect', () => {
     const code = socket.data.roomCode;
     if (!code) return;
@@ -764,15 +665,12 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     const leaving = room.players.find(p => p.socketId === socket.id);
-    console.log(`🔌 خروج: ${socket.id} (${leaving ? leaving.name : '?'}) من ${code}`);
-
     room.players = room.players.filter(p => p.socketId !== socket.id);
 
     if (room.players.length === 0) {
       clearTimeout(room.advanceTimer);
       delete rooms[code];
       console.log(`🗑️ [${code}] حُذفت الغرفة`);
-      logOpenRooms('بعد الحذف');
       return;
     }
 
@@ -802,9 +700,10 @@ io.on('connection', (socket) => {
 // ═══════════════════════════════════════════════════════════
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🎯 ع السريع — يعمل على المنفذ ${PORT}`);
+  console.log(`\n🎯 ع السريع — المنفذ ${PORT}`);
   console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`🤖 نموذج: ${OPENROUTER_MODEL}`);
-  console.log(`📊 الهدف: ${CONSTANTS.TARGET_SCORE} نقاط`);
-  console.log(`⏱️  كاش الأسئلة: ${CACHE_AGE_MS / 3600000} ساعات\n`);
+  console.log(`🤖 النموذج: ${OPENROUTER_MODEL}`);
+  console.log(`⏱️  مهلة الـ API: ${API_TIMEOUT_MS/1000}s`);
+  console.log(`📊 عدد الأسئلة المطلوب: ${QUESTIONS_TARGET}`);
+  console.log(`🎮 الهدف: ${CONSTANTS.TARGET_SCORE} نقاط\n`);
 });

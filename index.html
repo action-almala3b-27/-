@@ -421,6 +421,22 @@
     max-width: 300px;
   }
 
+  .gen-progress {
+    width: 60%; max-width: 260px; height: 4px;
+    background: rgba(196,132,252,0.15); border-radius: 4px;
+    overflow: hidden; margin-top: 6px;
+  }
+  .gen-progress-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #FB7185, #EC4899, #C084FC, #8B5CF6);
+    animation: genProgress 30s linear forwards;
+    box-shadow: 0 0 12px rgba(236,72,153,0.7);
+  }
+  @keyframes genProgress {
+    from { width: 0%; }
+    to { width: 100%; }
+  }
+
   .hidden { display:none !important; }
   .flex-col { display:flex; flex-direction:column; }
   .gap-8 { gap:8px; }
@@ -590,8 +606,9 @@
     <span class="icon">⚡</span>
     <span id="genCatName">جاري التحضير...</span>
   </div>
-  <div class="gen-text">جاري تحضير الأسئلة</div>
-  <div class="gen-sub">قد يستغرق هذا من 10 إلى 30 ثانية لأول مرة فقط، بعد كده هيكون فوري</div>
+  <div class="gen-text">جاري تحضير الأسئلة من الذكاء الاصطناعي</div>
+  <div class="gen-sub">قد تستغرق العملية من 10 إلى 30 ثانية</div>
+  <div class="gen-progress"><div class="gen-progress-bar" id="genProgressBar"></div></div>
 </div>
 
 <script>
@@ -784,6 +801,31 @@ $('btnCopyCode').addEventListener('click', () => {
 });
 
 // ═══════════════════════════════════════════════════
+// ⏱️ إدارة شاشة التوليد مع timeout
+// ═══════════════════════════════════════════════════
+let genTimeoutId = null;
+const GEN_TIMEOUT_MS = 35000;   // 35 ثانية كحد أقصى
+
+function startGenTimeout() {
+  clearTimeout(genTimeoutId);
+  // إعادة تشغيل شريط التقدم
+  const bar = $('genProgressBar');
+  bar.style.animation = 'none';
+  void bar.offsetWidth;
+  bar.style.animation = 'genProgress 35s linear forwards';
+
+  genTimeoutId = setTimeout(() => {
+    $('genOverlay').classList.remove('show');
+    console.warn('⚠️ انتهت مهلة التوليد');
+  }, GEN_TIMEOUT_MS);
+}
+
+function stopGenTimeout() {
+  clearTimeout(genTimeoutId);
+  genTimeoutId = null;
+}
+
+// ═══════════════════════════════════════════════════
 // شاشة توليد الأسئلة
 // ═══════════════════════════════════════════════════
 socket.on('generating_questions', ({ categoryMeta }) => {
@@ -799,18 +841,20 @@ socket.on('generating_questions', ({ categoryMeta }) => {
     nameEl.textContent = 'جاري التحضير...';
   }
   overlay.classList.add('show');
+  startGenTimeout();
 });
 
 socket.on('generating_failed', ({ message }) => {
+  stopGenTimeout();
   $('genOverlay').classList.remove('show');
   console.warn('⚠️', message);
-  // لا نعرض alert — نرجع للوبي تلقائياً عبر room_update
 });
 
 // ═══════════════════════════════════════════════════
 // GAME START
 // ═══════════════════════════════════════════════════
 socket.on('game_started', ({ targetScore }) => {
+  stopGenTimeout();
   $('genOverlay').classList.remove('show');
   state.targetScore = targetScore || 10;
   state.myLocked = false;
@@ -987,6 +1031,7 @@ socket.on('game_over', ({ winnerName, reason, rankings }) => {
 $('btnPlayAgain').addEventListener('click', () => socket.emit('play_again'));
 
 socket.on('room_reset', () => {
+  stopGenTimeout();
   state.myLocked = false;
   state.myWrongChoice = -1;
   state.category = null;
