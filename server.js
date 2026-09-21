@@ -22,16 +22,20 @@ const io = new Server(server, {
 // ═══════════════════════════════════════════════════════════
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-// المفتاح (من Environment Variable أو مباشر)
-const GROQ_KEY = process.env.GROQ_KEY
-  || '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';
+// المفتاح لازم يتحط في Environment Variable اسمه GROQ_KEY على Railway
+// (متسربش المفتاح في الكود أبداً — لو ظهر مرة يبقى لازم تلغيه فوراً وتطلع واحد جديد)
+const GROQ_KEY = process.env.GROQ_KEY || '';
 
-// ⚡ نماذج Groq المجانية — بالترتيب من الأقوى للأسرع
+if (!GROQ_KEY) {
+  console.warn('⚠️ تحذير: GROQ_KEY مش معرّف في Environment Variables!');
+}
+
+// ⚡ نماذج Groq — الموديلات دي هي المتاحة فعلياً لهذا الحساب (تم التأكد بالاختبار المباشر)
+// لو حسابك عنده وصول لموديلات تانية (llama, mixtral..) ضيفها هنا بعد ما تتأكد منها
+// عبر GET https://api.groq.com/openai/v1/models
 const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',       // الأفضل للأسئلة العربية
-  'llama-3.1-8b-instant',          // الأسرع (14,400 طلب/يوم)
-  'mixtral-8x7b-32768',            // بديل قوي
-  'gemma2-9b-it'                   // احتياطي
+  'openai/gpt-oss-120b',   // الأقوى المتاح لهذا الحساب
+  'openai/gpt-oss-20b'     // احتياطي أسرع
 ];
 
 const QUESTIONS_TARGET = 40;
@@ -701,6 +705,31 @@ io.on('connection', (socket) => {
 
     broadcastRoom(room);
   });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 🔍 تشخيص سريع: افتح /api/health في المتصفح للتأكد من حالة المفتاح
+// ═══════════════════════════════════════════════════════════
+app.get('/api/health', async (req, res) => {
+  if (!GROQ_KEY) {
+    res.json({ ok: false, problem: 'GROQ_KEY مش معرّف في Environment Variables' });
+    return;
+  }
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': 'Bearer ' + GROQ_KEY }
+    });
+    const body = await r.json().catch(() => null);
+    res.json({
+      ok: r.ok,
+      groq_http_status: r.status,
+      key_length: GROQ_KEY.length,
+      configured_models: GROQ_MODELS,
+      available_model_ids: body?.data ? body.data.map(m => m.id) : null
+    });
+  } catch (e) {
+    res.json({ ok: false, network_error: e.message });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════
