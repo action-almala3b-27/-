@@ -1,6 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// ع السريع — سيرفر مع تحميل مسبق تلقائي لكل الأقسام
-// الاعتماد الكامل على الـ API — بدون أي أسئلة مدمجة
+// ع السريع — سيرفر مع تحميل مسبق + نماذج مجانية متعددة
 // ═══════════════════════════════════════════════════════════
 const express = require('express');
 const http = require('http');
@@ -22,12 +21,27 @@ const io = new Server(server, {
 // 🔑 OpenRouter API
 // ═══════════════════════════════════════════════════════════
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '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';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
 
-const QUESTIONS_TARGET = 40;         // ← 40 سؤال لكل قسم
-const QUESTIONS_MIN_ACCEPT = 25;     // الحد الأدنى المقبول
-const API_TIMEOUT_MS = 60000;        // 60 ثانية
+// المفتاح الأساسي (من Environment Variable أو مباشر)
+const PRIMARY_KEY = process.env.OPENROUTER_KEY
+  || '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';
+
+// قائمة المفاتيح (مفتاح واحد حالياً — لو ضفت مفتاح جديد بعدين، ضيفه بفاصلة)
+const OPENROUTER_KEYS = (process.env.OPENROUTER_KEYS || PRIMARY_KEY)
+  .split(',').map(k => k.trim()).filter(Boolean);
+
+// ⚡ نماذج مجانية فقط — بالترتيب من الأسرع للأبطأ
+const FREE_MODELS = [
+  'google/gemini-2.0-flash-exp:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'deepseek/deepseek-chat-v3-0324:free',
+  'google/gemma-2-9b-it:free',
+  'qwen/qwen-2.5-72b-instruct:free'
+];
+
+const QUESTIONS_TARGET = 40;
+const QUESTIONS_MIN_ACCEPT = 25;
+const API_TIMEOUT_MS = 45000;
 
 const CATEGORY_DESCRIPTIONS = {
   football: 'كرة القدم: كأس العالم، دوري أبطال أوروبا، اللاعبون التاريخيون، الأندية الكبرى، المدربون، الانتقالات الشهيرة، الأرقام القياسية، الشعارات، التشكيلات، البطولات المحلية والقارية.',
@@ -37,12 +51,12 @@ const CATEGORY_DESCRIPTIONS = {
 };
 
 // ═══════════════════════════════════════════════════════════
-// 🌐 الكاش العالمي + الوعود الجارية
+// 🌐 الكاش العالمي
 // ═══════════════════════════════════════════════════════════
 const QUESTIONS_CACHE = {};
 const CACHE_TIMESTAMPS = {};
 const PREFETCH_PROMISES = {};
-const CACHE_AGE_MS = 4 * 60 * 60 * 1000;   // 4 ساعات
+const CACHE_AGE_MS = 4 * 60 * 60 * 1000;
 
 const ALL_CATEGORY_KEYS = ['football', 'general', 'anime', 'islamic'];
 
@@ -88,120 +102,135 @@ function normalizeCategory(raw) {
 function buildQuestionsPrompt(categoryKey, categoryNameAr) {
   const description = CATEGORY_DESCRIPTIONS[categoryKey] || '';
 
-  return `أنت خبير أسئلة مسابقات عربية. أعد ${QUESTIONS_TARGET} سؤال اختيار من متعدد في موضوع "${categoryNameAr}".
+  return `أعد ${QUESTIONS_TARGET} سؤال اختيار من متعدد باللغة العربية في موضوع "${categoryNameAr}".
 
 الوصف التفصيلي: ${description}
 
-قواعد الصعوبة (موزّعة عشوائياً، مخلوطة):
+قواعد الصعوبة (موزّعة عشوائياً):
 • 40% سهلة (يعرفها أي شخص)
 • 30% متوسطة (تحتاج متابعة)
 • 20% صعبة (للمتابعين الشغوفين)
 • 10% شبه مستحيلة (تفاصيل نادرة جداً)
 
-الترتيب عشوائي تماماً — لا ترتّب حسب الصعوبة.
-
 شروط إلزامية:
 1. كل سؤال له 4 خيارات، واحد صحيح.
-2. لا تكرر أي سؤال داخل القائمة.
+2. لا تكرر أي سؤال.
 3. معلومات دقيقة وحديثة.
-4. كل النصوص بالعربية الفصحى.
+4. النصوص بالعربية الفصحى فقط.
 5. التزم حرفياً بموضوع "${categoryNameAr}".
 6. الخيارات قصيرة (1-5 كلمات).
-7. نوّع المواضيع داخل الباقة قدر الإمكان.
 
-أعد النتيجة بصيغة JSON فقط (بدون أي شرح):
+أعد JSON فقط بهذه الصيغة:
 {"questions":[{"question":"نص السؤال؟","choices":["خيار1","خيار2","خيار3","خيار4"],"correct_index":0}]}`;
 }
 
 // ═══════════════════════════════════════════════════════════
-// توليد من الـ API
+// محاولة واحدة بنموذج معين
+// ═══════════════════════════════════════════════════════════
+async function trySingleRequest(model, apiKey, prompt, signal) {
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey,
+      'HTTP-Referer': 'https://sahragames.local',
+      'X-Title': 'Ala Sareea'
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: 'system', content: 'أنت مساعد يلتزم بالتعليمات ويُرجع JSON صالحاً فقط.' },
+        { role: 'user', content: prompt }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 1.0,
+      max_tokens: 8000
+    }),
+    signal
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    const err = new Error(`HTTP ${res.status}`);
+    err.status = res.status;
+    err.detail = errText.slice(0, 200);
+    throw err;
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || '';
+  if (!text) throw new Error('رد فارغ');
+
+  let cleanText = String(text).trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  const first = cleanText.indexOf('{');
+  const last = cleanText.lastIndexOf('}');
+  if (first !== -1 && last > first) cleanText = cleanText.slice(first, last + 1);
+
+  const parsed = JSON.parse(cleanText);
+  const rawQuestions = parsed.questions || parsed.Questions || [];
+
+  const valid = [];
+  const seen = new Set();
+
+  rawQuestions.forEach(q => {
+    if (!q || typeof q.question !== 'string') return;
+    const qText = q.question.trim();
+    if (seen.has(qText)) return;
+
+    const choices = q.choices || q.options;
+    const idx = Number(q.correct_index ?? q.correctIndex ?? q.answer);
+
+    if (!Array.isArray(choices) || choices.length !== 4) return;
+    if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
+    if (qText.length < 5) return;
+
+    seen.add(qText);
+    valid.push({ question: qText, choices: choices.map(String), correct_index: idx });
+  });
+
+  if (valid.length < 5) throw new Error(`عدد قليل (${valid.length})`);
+  return valid;
+}
+
+// ═══════════════════════════════════════════════════════════
+// توليد من الـ API — مع fallback على كل النماذج والمفاتيح
 // ═══════════════════════════════════════════════════════════
 async function generateQuestionsFromAPI(categoryKey) {
   const meta = Object.values(CATEGORY_DISPLAY).find(m => m.key === categoryKey);
   if (!meta) throw new Error('قسم غير معروف');
 
   const prompt = buildQuestionsPrompt(categoryKey, meta.nameAr);
+  let lastError = null;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  for (const apiKey of OPENROUTER_KEYS) {
+    for (const model of FREE_MODELS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-  try {
-    console.log(`🤖 [API] توليد ${QUESTIONS_TARGET} سؤال لقسم "${meta.nameAr}"...`);
-    const startTime = Date.now();
+      try {
+        const startTime = Date.now();
+        console.log(`🤖 [${model}] قسم "${meta.nameAr}"...`);
 
-    const res = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + OPENROUTER_KEY,
-        'HTTP-Referer': 'https://sahragames.local',
-        'X-Title': 'Ala Sareea'
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages: [
-          { role: 'system', content: 'أنت مساعد يلتزم بالتعليمات ويُرجع JSON صالحاً فقط.' },
-          { role: 'user', content: prompt }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 1.0,
-        max_tokens: 16000
-      }),
-      signal: controller.signal
-    });
+        const questions = await trySingleRequest(model, apiKey, prompt, controller.signal);
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`❌ [API] HTTP ${res.status}:`, errText.slice(0, 200));
-      throw new Error(`HTTP ${res.status}`);
+        console.log(`✅ [${model}] ${questions.length} سؤال في ${elapsed}s`);
+        clearTimeout(timer);
+        return questions;
+
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+        console.warn(`⚠️ [${model}]: ${err.message}`);
+      }
     }
-
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content || '';
-    if (!text) throw new Error('الرد فارغ');
-
-    let cleanText = String(text).trim()
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
-
-    const first = cleanText.indexOf('{');
-    const last = cleanText.lastIndexOf('}');
-    if (first !== -1 && last > first) cleanText = cleanText.slice(first, last + 1);
-
-    const parsed = JSON.parse(cleanText);
-    const rawQuestions = parsed.questions || parsed.Questions || [];
-
-    const valid = [];
-    const seen = new Set();
-
-    rawQuestions.forEach(q => {
-      if (!q || typeof q.question !== 'string') return;
-      const qText = q.question.trim();
-      if (seen.has(qText)) return;
-
-      const choices = q.choices || q.options;
-      const idx = Number(q.correct_index ?? q.correctIndex ?? q.answer);
-
-      if (!Array.isArray(choices) || choices.length !== 4) return;
-      if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
-      if (qText.length < 5) return;
-
-      seen.add(qText);
-      valid.push({ question: qText, choices: choices.map(String), correct_index: idx });
-    });
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`✅ [API] "${meta.nameAr}" → ${valid.length} سؤال في ${elapsed}s`);
-
-    if (valid.length < QUESTIONS_MIN_ACCEPT) {
-      throw new Error(`عدد قليل (${valid.length} من ${QUESTIONS_MIN_ACCEPT})`);
-    }
-
-    return valid;
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw lastError || new Error('كل النماذج فشلت');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -237,7 +266,7 @@ function startPrefetch(categoryKey) {
 }
 
 function prefetchAllCategories() {
-  console.log('\n🚀 [Prefetch] بدء تحميل الأقسام الأربعة بالتوازي (40 سؤال لكل قسم)...');
+  console.log('\n🚀 [Prefetch] بدء تحميل الأقسام الأربعة بالتوازي...');
   ALL_CATEGORY_KEYS.forEach(key => {
     startPrefetch(key).catch(() => {});
   });
@@ -253,20 +282,20 @@ async function getQuestionsForCategory(categoryKey) {
 
   if (cached && cached.length >= QUESTIONS_MIN_ACCEPT && age < CACHE_AGE_MS) {
     const minAgo = Math.floor(age / 60000);
-    console.log(`⚡ [CACHE] ${categoryKey} → ${cached.length} سؤال (عمرها ${minAgo} دقيقة)`);
+    console.log(`⚡ [CACHE] ${categoryKey} → ${cached.length} سؤال (${minAgo} دقيقة)`);
     return cached;
   }
 
   if (PREFETCH_PROMISES[categoryKey]) {
-    console.log(`⏳ [Prefetch جارٍ] انتظار "${categoryKey}"...`);
+    console.log(`⏳ انتظار "${categoryKey}"...`);
     try {
       return await PREFETCH_PROMISES[categoryKey];
     } catch (e) {
-      console.error(`❌ [Prefetch فشل] ${e.message}`);
+      console.error(`❌ فشل: ${e.message}`);
     }
   }
 
-  console.log(`🆕 [طلب جديد] "${categoryKey}"...`);
+  console.log(`🆕 طلب جديد: "${categoryKey}"...`);
   try {
     return await startPrefetch(categoryKey);
   } catch (e) {
@@ -274,7 +303,7 @@ async function getQuestionsForCategory(categoryKey) {
       console.log(`⚡ [CACHE قديم] ${cached.length} سؤال`);
       return cached;
     }
-    throw new Error('تعذّر توليد الأسئلة من الـ API');
+    throw new Error('تعذّر توليد الأسئلة');
   }
 }
 
@@ -364,7 +393,6 @@ function broadcastRoom(room) {
 }
 
 function pickNextQuestion(room) {
-  // إذا انتهت الأسئلة — أعد خلطها كلها من جديد
   if (room.questionIndex + 1 >= room.questionPool.length) {
     room.questionPool = shuffleArray(room.questionPool).map(shuffleQuestionChoices);
     room.questionIndex = -1;
@@ -410,7 +438,7 @@ function endGame(room, winner) {
     rankings: sorted.map((p, i) => ({ rank: i + 1, name: p.name, avatar: p.avatar, score: p.score }))
   });
   broadcastRoom(room);
-  console.log(`🏆 [${room.code}] انتهت — الفائز: ${winner ? winner.name : 'لا أحد'}`);
+  console.log(`🏆 [${room.code}] الفائز: ${winner ? winner.name : 'لا أحد'}`);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -422,7 +450,6 @@ io.on('connection', (socket) => {
   socket.on('create_room', ({ name, avatar }) => {
     if (!name || !name.trim()) return socket.emit('error_msg', { msg: 'اكتب اسمك!' });
 
-    // 🚀 بدء التحميل المسبق لجميع الأقسام فوراً
     prefetchAllCategories();
 
     const room = createRoom(socket.id);
@@ -487,7 +514,6 @@ io.on('connection', (socket) => {
     room.category = filename;
     room.categoryKey = CATEGORY_DISPLAY[filename].key;
 
-    // تأكد أن القسم المختار يُحمَّل
     startPrefetch(room.categoryKey).catch(() => {});
 
     broadcastRoom(room);
@@ -512,9 +538,9 @@ io.on('connection', (socket) => {
                     QUESTIONS_CACHE[room.categoryKey].length >= QUESTIONS_MIN_ACCEPT;
 
     if (isReady) {
-      console.log(`⚡ [${room.code}] الأسئلة جاهزة مسبقاً — بدء فوري`);
+      console.log(`⚡ [${room.code}] الأسئلة جاهزة — بدء فوري`);
     } else {
-      console.log(`⏳ [${room.code}] انتظار التحميل الجاري...`);
+      console.log(`⏳ [${room.code}] انتظار التحميل...`);
     }
 
     try {
@@ -532,7 +558,7 @@ io.on('connection', (socket) => {
       room.generating = false;
       room.state = 'playing';
 
-      console.log(`✅ [${room.code}] جاهزون — ${room.questionPool.length} سؤال في البول`);
+      console.log(`✅ [${room.code}] جاهزون — ${room.questionPool.length} سؤال`);
 
       io.to(room.code).emit('game_started', {
         category: room.categoryKey,
@@ -684,8 +710,7 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🎯 ع السريع — المنفذ ${PORT}`);
-  console.log(`🤖 النموذج: ${OPENROUTER_MODEL}`);
-  console.log(`🚀 التحميل المسبق: عند إنشاء الغرفة`);
-  console.log(`📊 الأسئلة لكل قسم: ${QUESTIONS_TARGET}`);
-  console.log(`🎯 الهدف: ${CONSTANTS.TARGET_SCORE} نقطة\n`);
+  console.log(`🤖 النماذج: ${FREE_MODELS.join(', ')}`);
+  console.log(`🔑 عدد المفاتيح: ${OPENROUTER_KEYS.length}`);
+  console.log(`📊 الأسئلة لكل قسم: ${QUESTIONS_TARGET}\n`);
 });
